@@ -27,10 +27,10 @@ def extract_skeleton(java_file):
                 text = text[:text.index('{')] + ' {'
             skeleton.append(text + '\n}')
         elif tag == 'definition.method':
-            text = node.text.decode('utf8')
+            text = node.text.decode('utf8').replace('\n', ' ')
             if '{' in text:
-                text = text[:text.index('{')] + ' {'
-            skeleton.append('    ' + text + '\n    }')
+                text = text[:text.index('{')] + ' { ... }'
+            skeleton.append('    ' + text.strip())
         elif tag == 'definition.field':
             text = node.text.decode('utf8')
             if text.endswith(';'):
