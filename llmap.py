@@ -21,16 +21,30 @@ def extract_skeleton(java_file):
     # Extract definitions 
     skeleton = []
     for node, tag in query.captures(tree.root_node):
-        if tag in ('definition.class', 'definition.interface'):
-            text = node.text.decode('utf8')
-            if '{' in text:
-                text = text[:text.index('{')] + ' {'
-            skeleton.append(text + '\n}')
+        if tag == 'definition.class':
+            # Find all parts of the class declaration
+            parts = []
+            for n, t in query.captures(node):
+                if t in ('class.modifiers', 'name.definition.class', 'class.superclass', 'class.interfaces'):
+                    if n.text:
+                        parts.append(n.text.decode('utf8').strip())
+            skeleton.append(' '.join(parts))
+        elif tag == 'definition.interface':
+            # Find all parts of the interface declaration
+            parts = []
+            for n, t in query.captures(node):
+                if t in ('interface.modifiers', 'name.definition.interface', 'interface.extends'):
+                    if n.text:
+                        parts.append(n.text.decode('utf8').strip())
+            skeleton.append(' '.join(parts))
         elif tag == 'definition.method':
-            text = node.text.decode('utf8').replace('\n', ' ')
-            if '{' in text:
-                text = text[:text.index('{')] + ' { ... }'
-            skeleton.append('    ' + text.strip())
+            # Find all parts of the method declaration
+            parts = []
+            for n, t in query.captures(node):
+                if t in ('method.modifiers', 'method.type', 'name.definition.method', 'method.params'):
+                    if n.text:
+                        parts.append(n.text.decode('utf8').strip())
+            skeleton.append('    ' + ' '.join(parts))
         elif tag == 'definition.field':
             text = node.text.decode('utf8')
             if text.endswith(';'):
@@ -47,9 +61,7 @@ def main():
         
     for fname in sys.argv[1:]:
         print(f"\n# {fname}\n")
-        print("```java")
         print(extract_skeleton(fname))
-        print("```")
 
 if __name__ == '__main__':
     main()
