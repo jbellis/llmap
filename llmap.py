@@ -31,6 +31,12 @@ def extract_skeleton(java_file):
             if '{' in text:
                 text = text[:text.index('{')] + ' {'
             skeleton.append('    ' + text + '\n    }')
+        elif tag == 'definition.field':
+            text = node.text.decode('utf8')
+            if text.endswith(';'):
+                skeleton.append('    ' + text)
+            else:
+                skeleton.append('    ' + text + ';')
 
     return '\n\n'.join(skeleton)
 
