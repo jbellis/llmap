@@ -2,7 +2,8 @@
   (modifiers)? @class.modifiers
   name: (identifier) @name.definition.class
   superclass: (superclass)? @class.superclass
-  interfaces: (super_interfaces)? @class.interfaces) @definition.class
+  interfaces: (super_interfaces)? @class.interfaces
+  body: (class_body) @class.body) @definition.class
 
 (method_declaration
   (modifiers)? @method.modifiers
