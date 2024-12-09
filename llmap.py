@@ -4,71 +4,71 @@ import sys
 from pathlib import Path
 from tree_sitter_languages import get_language, get_parser
 
-def _process_class(child, query, indent):
+def _process_class(node, indent):
     """Process a class definition node"""
-    parts = []
-    class_body = None
-    for n, t in query.captures(child):
-        if t == 'name.definition.class':
-            parts.append('class ' + n.text.decode('utf8').strip())
-            continue
-        if t in ('class.modifiers', 'class.superclass', 'class.interfaces'):
-            if n.text:
-                parts.append(t + '->' + n.text.decode('utf8').strip())
-            continue
-        if t == 'class.body':
-            class_body = n
-    print(parts)
-    return ' '.join(parts), class_body
+    name_node = node.child_by_field_name('name')
+    class_name = name_node.text.decode('utf8') if name_node else 'Anonymous'
 
-def _process_interface(child, query, indent):
+    modifiers = []
+    for t in ('class.modifiers', 'class.superclass', 'class.interfaces'):
+        child = node.child_by_field_name('t')
+        if not child:
+            continue
+        modifiers.extend(m.text.decode('utf8') for m in child)
+
+    body = node.child_by_field_name('body')
+    return f"{' '.join(modifiers)}class {class_name}", body
+
+def _process_interface(node, indent):
     """Process an interface definition node"""
-    parts = []
-    interface_body = None
-    for n, t in query.captures(child):
-        if t in ('interface.modifiers', 'name.definition.interface', 'interface.extends'):
-            if n.text:
-                parts.append(n.text.decode('utf8').strip())
-        if t == 'interface.body':
-            interface_body = n
+    name_node = node.child_by_field_name('name')
+    interface_name = name_node.text.decode('utf8') if name_node else 'Anonymous'
     
-    return ' '.join(parts), interface_body
+    modifiers = node.child_by_field_name('modifiers')
+    mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
+    
+    body = node.child_by_field_name('body')
+    return f"{mod_text}interface {interface_name}", body
 
-def _process_method(child, query, indent):
+def _process_method(node, indent):
     """Process a method definition node"""
-    parts = []
-    for n, t in query.captures(child):
-        if t in ('method.modifiers', 'method.type', 'name.definition.method', 'method.params'):
-            if n.text:
-                parts.append(n.text.decode('utf8').strip())
-    return ' '.join(parts) + ' {...}'
+    name = node.child_by_field_name('name').text.decode('utf8')
+    type_node = node.child_by_field_name('type')
+    type_text = type_node.text.decode('utf8') if type_node else 'void'
+    params = node.child_by_field_name('parameters').text.decode('utf8')
+    
+    modifiers = node.child_by_field_name('modifiers')
+    mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
+    
+    return f"{mod_text}{type_text} {name}{params} {{...}}"
 
-def _process_field(child, indent):
+def _process_field(node, indent):
     """Process a field definition node"""
-    return child.text.decode('utf8')
+    return node.text.decode('utf8')
 
-def _process_node(node, query, indent_level=0):
+def _process_node(node, indent_level=0):
     """Process a node recursively and return its skeleton parts"""
     skeleton = []
     indent = "  " * indent_level
 
-    for child, tag in query.captures(node):
-        if tag == 'definition.class':
-            signature, class_body = _process_class(child, query, indent)
+    for child in node.children:
+        if child.type == 'class_declaration':
+            signature, body = _process_class(child, indent)
             skeleton.append(indent + signature)
-            if class_body:
-                skeleton.extend(_process_node(class_body, query, indent_level + 1))
+            if body:
+                skeleton.extend(_process_node(body, indent_level + 1))
             
-        elif tag == 'definition.interface':
-            signature, interface_body = _process_interface(child, query, indent)
+        elif child.type == 'interface_declaration':
+            signature, body = _process_interface(child, indent)
             skeleton.append(indent + signature)
-            skeleton.extend(_process_node(interface_body, query, indent_level + 1))
+            if body:
+                skeleton.extend(_process_node(body, indent_level + 1))
             
-        elif tag == 'definition.method':
-            signature = _process_method(child, query, indent)
+        elif child.type == 'method_declaration':
+            signature = _process_method(child, indent)
             skeleton.append(indent + signature)
             
-        elif tag == 'definition.field':
+        elif child.type == 'field_declaration':
             text = _process_field(child, indent)
             skeleton.append(indent + text)
 
@@ -77,19 +77,14 @@ def _process_node(node, query, indent_level=0):
 def extract_skeleton(java_file):
     """Extract class/method signatures from a Java file"""
     # Load Java parser
-    language = get_language('java')
     parser = get_parser('java')
     
-    # Load tags query
-    query_path = Path(__file__).parent / "languages" / "tree-sitter-java-tags.scm" 
-    query = language.query(query_path.read_text())
-
     # Parse file
     code = Path(java_file).read_text()
     tree = parser.parse(bytes(code, "utf8"))
 
     # Extract definitions recursively
-    skeleton = _process_node(tree.root_node, query)
+    skeleton = _process_node(tree.root_node)
     return '\n\n'.join(skeleton)
 
 def main():
