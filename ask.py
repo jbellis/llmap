@@ -1,6 +1,6 @@
 import os
 import sys
-import anthropic
+import google.generativeai as genai
 from pathlib import Path
 
 def find_relevant_files(query, source_dir):
@@ -15,8 +15,11 @@ def find_relevant_files(query, source_dir):
     # Format files list for Claude
     files_list = "\n".join(all_files)
     
-    # Create Claude client
-    client = anthropic.Anthropic()
+    # Configure Gemini
+    genai.configure(api_key=os.getenv('GOOGLE_API_KEY'))
+    
+    # Create Gemini client
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     # Construct prompt
     prompt = f"""Given this list of files:
@@ -25,22 +28,18 @@ def find_relevant_files(query, source_dir):
 
 Which of these files might be relevant to this query: "{query}"?
 Return ONLY the filenames, one per line.
-Be liberal in including files that might be relevant.
 Don't explain your choices, just list the filenames."""
 
-    # Get response from Claude
-    message = client.messages.create(
-        model="claude-3-5-haiku-latest",
-        max_tokens=1024,
-        temperature=0,
-        system="You help identify source code files that might be relevant to queries. Be inclusive - better to return too many files than too few.",
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
+    # Get response from Gemini
+    response = model.generate_content(
+        prompt,
+        generation_config=genai.types.GenerationConfig(
+            temperature=0
+        )
     )
     
     # Parse response
-    relevant_files = message.content[0].text.strip().split('\n')
+    relevant_files = response.text.strip().split('\n')
     
     # Check existence and print results
     results = []

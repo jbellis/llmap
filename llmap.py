@@ -44,19 +44,16 @@ def extract_skeleton(java_file):
                 if t in ('method.modifiers', 'method.type', 'name.definition.method', 'method.params'):
                     if n.text:
                         parts.append(n.text.decode('utf8').strip())
-            skeleton.append('    ' + ' '.join(parts))
+            skeleton.append('  ' + ' '.join(parts) + ' {...}')
         elif tag == 'definition.field':
             text = node.text.decode('utf8')
-            if text.endswith(';'):
-                skeleton.append('    ' + text)
-            else:
-                skeleton.append('    ' + text + ';')
+            skeleton.append('  ' + text)
 
     return '\n\n'.join(skeleton)
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: skeleton.py <java_file> [java_file...]")
+        print("Usage: llmap.py <java_file> [java_file...]")
         sys.exit(1)
         
     for fname in sys.argv[1:]:
