@@ -25,7 +25,10 @@ def extract_skeleton(java_file):
             # Find all parts of the class declaration
             parts = []
             for n, t in query.captures(node):
-                if t in ('class.modifiers', 'name.definition.class', 'class.superclass', 'class.interfaces'):
+                if t == 'name.definition.class':
+                    parts.append('class ' + n.text.decode('utf8').strip())
+                    continue
+                if t in ('class.modifiers', 'class.superclass', 'class.interfaces'):
                     if n.text:
                         parts.append(n.text.decode('utf8').strip())
             skeleton.append(' '.join(parts))
