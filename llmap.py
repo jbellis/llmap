@@ -74,13 +74,13 @@ def _process_node(node, indent_level=0):
 
     return skeleton
 
-def extract_skeleton(java_file):
+def extract_skeleton(source_file):
     """Extract class/method signatures from a Java file"""
     # Load Java parser
     parser = get_parser('java')
     
     # Parse file
-    code = Path(java_file).read_text()
+    code = Path(source_file).read_text()
     tree = parser.parse(bytes(code, "utf8"))
 
     # Extract definitions recursively
@@ -89,7 +89,7 @@ def extract_skeleton(java_file):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: llmap.py <java_file> [java_file...]")
+        print("Usage: llmap.py <source_file> [source_file...]")
         sys.exit(1)
         
     for fname in sys.argv[1:]:
