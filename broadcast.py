@@ -5,12 +5,14 @@ import random
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from llmap import extract_skeleton
-from ai import check_relevance, check_full_source, create_client
+from ai import generate_relevance, check_full_source, create_client
 
 
 def main():
     parser = argparse.ArgumentParser(description='Check Java files for relevance to a question')
-    parser.add_argument('directory', help='Directory containing Java files')
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--directory', help='Directory containing Java files')
+    group.add_argument('--file', help='Single Java file to check')
     parser.add_argument('question', help='Question to check relevance against')
     parser.add_argument('--sample', type=int, help='Number of random files to sample')
     args = parser.parse_args()
@@ -24,18 +26,28 @@ def main():
     # Initialize client
     client = create_client(api_key)
     
-    # Get all Java files in the directory
-    java_files = glob.glob(os.path.join(args.directory, "**/*.java"), recursive=True)
-    
-    # Sample files if requested
-    if args.sample and args.sample < len(java_files):
-        java_files = random.sample(java_files, args.sample)
+    # Get Java files based on input
+    if args.file:
+        if not args.file.endswith('.java'):
+            print("Error: File must be a Java file")
+            return 1
+        if not os.path.isfile(args.file):
+            print(f"Error: File {args.file} does not exist")
+            return 1
+        java_files = [args.file]
+    else:
+        # Get all Java files in the directory
+        java_files = glob.glob(os.path.join(args.directory, "**/*.java"), recursive=True)
+        
+        # Sample files if requested
+        if args.sample and args.sample < len(java_files):
+            java_files = random.sample(java_files, args.sample)
     
     # Create thread pool and process files
     with ThreadPoolExecutor(max_workers=500) as executor:
         futures = []
         for file_path in java_files:
-            future = executor.submit(check_relevance, file_path, args.question, client)
+            future = executor.submit(generate_relevance, file_path, args.question, client)
             futures.append(future)
         
         # Process results with progress bar
