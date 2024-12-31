@@ -72,6 +72,9 @@ def generate_relevance(file_path: str, question: str, client: OpenAI) -> tuple[s
         return file_path, e
 
     answer = response.choices[0].message.content.lower().strip()
+    if 'unclear' in answer:
+        with open('unclear.txt', 'a') as f:
+            f.write(f"\nFile: {file_path}\nResponse: {answer}\n")
     return file_path, answer
 
 def create_client(api_key: str) -> OpenAI:

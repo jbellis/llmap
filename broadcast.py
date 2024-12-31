@@ -51,18 +51,25 @@ def main():
         
         # Process results with progress bars
         results = []
+        eval_futures = []
         relevant_files = []
         
         # First progress bar for generating relevance
         for future in tqdm(futures, total=len(futures), desc="Generating relevance"):
             results.append(future.result())
             
+        # Submit evaluation tasks
+        for file, result in results:
+            eval_future = executor.submit(evaluate_relevance, client, file, result)
+            eval_futures.append(eval_future)
+            
         # Second progress bar for evaluating relevance
-        for file, result in tqdm(results, desc="Evaluating relevance"):
-            _, is_relevant = evaluate_relevance(client, file, result)
+        for future in tqdm(eval_futures, desc="Evaluating relevance"):
+            _, is_relevant = future.result()
             if is_relevant:
-                relevant_files.append(file)
-    
+                relevant_files.append(_)
+
+    # No extra headers so the output can easily be used in xargs et al
     for file in relevant_files:
         print(file)
 
