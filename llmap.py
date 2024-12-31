@@ -145,7 +145,6 @@ def _process_node(node, indent_level=0):
             annotations = _process_annotations(child)
             signature = _process_method(child, indent)
             skeleton.append(indent + annotations + signature)
-            skeleton.append(indent + signature)
             
         elif child.type == 'field_declaration':
             annotations = _process_annotations(child)
