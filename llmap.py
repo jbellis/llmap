@@ -46,6 +46,48 @@ def _process_field(node, indent):
     """Process a field definition node"""
     return node.text.decode('utf8')
 
+def _process_enum(node, indent):
+    """Process an enum definition node"""
+    name_node = node.child_by_field_name('name')
+    enum_name = name_node.text.decode('utf8') if name_node else 'Anonymous'
+    
+    modifiers = node.child_by_field_name('modifiers')
+    mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
+    
+    body = node.child_by_field_name('body')
+    
+    # Start with the enum declaration
+    enum_parts = [f"{mod_text}enum {enum_name}"]
+    
+    if body:
+        # First process enum constants
+        constants = []
+        methods = []
+        
+        for child in body.children:
+            if child.type == 'enum_constant':
+                # Just get the identifier part for enum constants
+                const_name = child.child_by_field_name('name')
+                if const_name:
+                    constants.append(indent + "  " + const_name.text.decode('utf8'))
+            elif child.type == 'method_declaration':
+                # Add method signature
+                method_sig = _process_method(child, indent)
+                methods.append(indent + "  " + method_sig)
+            elif child.type == 'enum_body_declarations':
+                # Process methods inside the enum body declarations
+                for method in child.children:
+                    if method.type == 'method_declaration':
+                        method_sig = _process_method(method, indent)
+                        methods.append(indent + "  " + method_sig)
+        
+        # Add constants first, then methods
+        enum_parts.extend(constants)
+        if methods:
+            enum_parts.extend(methods)
+                
+    return "\n".join(enum_parts), None
+
 def _process_node(node, indent_level=0):
     """Process a node recursively and return its skeleton parts"""
     skeleton = []
@@ -71,6 +113,12 @@ def _process_node(node, indent_level=0):
         elif child.type == 'field_declaration':
             text = _process_field(child, indent)
             skeleton.append(indent + text)
+            
+        elif child.type == 'enum_declaration':
+            signature, body = _process_enum(child, indent)
+            skeleton.append(indent + signature)
+            if body:
+                skeleton.extend(_process_node(body, indent_level + 1))
 
     return skeleton
 
