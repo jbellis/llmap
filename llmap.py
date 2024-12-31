@@ -30,7 +30,7 @@ def _process_interface(node, indent):
     body = node.child_by_field_name('body')
     return f"{mod_text}interface {interface_name}", body
 
-def _process_method(node, indent):
+def _process_method(node, indent, is_annotation_element=False):
     """Process a method definition node"""
     name = node.child_by_field_name('name').text.decode('utf8')
     type_node = node.child_by_field_name('type')
@@ -40,11 +40,34 @@ def _process_method(node, indent):
     modifiers = node.child_by_field_name('modifiers')
     mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
     
-    return f"{mod_text}{type_text} {name}{params} {{...}}"
+    # Handle default value for annotation elements
+    default = node.child_by_field_name('default_value')
+    default_text = f" default {default.text.decode('utf8')}" if default else ""
+    
+    # For annotation elements, we want the full declaration
+    if is_annotation_element:
+        return f"{indent}{type_text} {name}(){default_text};"
+    
+    # For regular methods
+    return f"{indent}{mod_text}{type_text} {name}{params} {{...}}"
 
 def _process_field(node, indent):
     """Process a field definition node"""
     return node.text.decode('utf8')
+
+def _process_annotation(node, indent):
+    """Process an annotation declaration node"""
+    name_node = node.child_by_field_name('name')
+    annotation_name = name_node.text.decode('utf8') if name_node else 'Anonymous'
+    
+    modifiers = node.child_by_field_name('modifiers')
+    mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
+    
+    # Get annotation meta-annotations
+    annotations = _process_annotations(node)
+    
+    body = node.child_by_field_name('body')
+    return f"{annotations}{mod_text}@interface {annotation_name}", body
 
 def _process_enum(node, indent):
     """Process an enum definition node"""
@@ -94,24 +117,40 @@ def _process_node(node, indent_level=0):
     indent = "  " * indent_level
 
     for child in node.children:
-        if child.type == 'class_declaration':
+        if child.type == 'annotation_type_declaration':
+            signature, body = _process_annotation(child, indent)
+            skeleton.append(indent + signature + " {")
+            if body:
+                # Process annotation elements (methods)
+                for element in body.children:
+                    if element.type == 'method_declaration':
+                        method_sig = _process_method(element, indent + "  ", is_annotation_element=True)
+                        skeleton.append(method_sig)
+            skeleton.append(indent + "}")
+        elif child.type == 'class_declaration':
+            annotations = _process_annotations(child)
             signature, body = _process_class(child, indent)
-            skeleton.append(indent + signature)
+            skeleton.append(indent + annotations + signature)
             if body:
                 skeleton.extend(_process_node(body, indent_level + 1))
             
         elif child.type == 'interface_declaration':
+            annotations = _process_annotations(child)
             signature, body = _process_interface(child, indent)
-            skeleton.append(indent + signature)
+            skeleton.append(indent + annotations + signature)
             if body:
                 skeleton.extend(_process_node(body, indent_level + 1))
             
         elif child.type == 'method_declaration':
+            annotations = _process_annotations(child)
             signature = _process_method(child, indent)
+            skeleton.append(indent + annotations + signature)
             skeleton.append(indent + signature)
             
         elif child.type == 'field_declaration':
+            annotations = _process_annotations(child)
             text = _process_field(child, indent)
+            skeleton.append(indent + annotations + text)
             skeleton.append(indent + text)
             
         elif child.type == 'enum_declaration':
@@ -121,6 +160,14 @@ def _process_node(node, indent_level=0):
                 skeleton.extend(_process_node(body, indent_level + 1))
 
     return skeleton
+
+def _process_annotations(node):
+    """Extract annotation text from a node"""
+    annotations = []
+    for child in node.children:
+        if child.type == 'marker_annotation' or child.type == 'annotation':
+            annotations.append(child.text.decode('utf8'))
+    return ' '.join(annotations) + ' ' if annotations else ''
 
 def extract_skeleton(source_file):
     """Extract class/method signatures from a Java file"""
