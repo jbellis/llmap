@@ -4,8 +4,7 @@ import os
 import random
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-from llmap import extract_skeleton
-from ai import generate_relevance, check_full_source, create_client
+from ai import generate_relevance, create_client, evaluate_relevance
 
 
 def main():
@@ -50,34 +49,22 @@ def main():
             future = executor.submit(generate_relevance, file_path, args.question, client)
             futures.append(future)
         
-        # Process results with progress bar
+        # Process results with progress bars
         results = []
-        for future in tqdm(futures, total=len(futures), desc="Processing files"):
-            results.append(future.result())
-    
-    # Separate files that need full source check
-    source_files = [file for file, result in results if result == 'source']
-    
-    # Second pass for source files
-    if source_files:
-        source_futures = []
-        with ThreadPoolExecutor(max_workers=500) as executor:
-            for file_path in source_files:
-                future = executor.submit(check_full_source, file_path, args.question, client)
-                source_futures.append(future)
-            
-            # Process source results with progress bar
-            source_results = []
-            for future in tqdm(source_futures, total=len(source_futures), desc="Processing full sources"):
-                file, r = future.result()
-                source_results.append((file, 'source -> ' + r))
+        relevant_files = []
         
-        # Update results for source files
-        results = [(f, r) for f, r in results if r != 'source'] + source_results
-
-    # Print final results
-    for file, result in results:
-        print(f'{file}: {result}')
+        # First progress bar for generating relevance
+        for future in tqdm(futures, total=len(futures), desc="Generating relevance"):
+            results.append(future.result())
+            
+        # Second progress bar for evaluating relevance
+        for file, result in tqdm(results, desc="Evaluating relevance"):
+            _, is_relevant = evaluate_relevance(client, file, result)
+            if is_relevant:
+                relevant_files.append(file)
+    
+    for file in relevant_files:
+        print(file)
 
 if __name__ == "__main__":
     main()

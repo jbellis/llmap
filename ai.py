@@ -4,7 +4,7 @@ from llmap import extract_skeleton
 
 MAX_TOKENS = 64000  # Leave some headroom for message scaffolding while staying under 64k token limit
 
-def maybe_truncate(text, max_tokens):
+def maybe_truncate(text: str, max_tokens: int) -> str:
     """Truncate skeleton to stay under token limit"""
     # Count tokens
     tokens = tokenizer.encode(text)
@@ -20,7 +20,7 @@ def maybe_truncate(text, max_tokens):
         
     return text
 
-def check_full_source(file_path, question, client):
+def check_full_source(file_path: str, question: str, client: OpenAI) -> tuple[str, str]:
     """Check the full source of a file for relevance"""
     try:
         with open(file_path, 'r') as f:
@@ -48,7 +48,7 @@ def check_full_source(file_path, question, client):
 
     return file_path, response.choices[0].message.content.lower().strip()
 
-def generate_relevance(file_path, question, client):
+def generate_relevance(file_path: str, question: str, client: OpenAI) -> tuple[str, str]:
     """Check if a Java file is relevant to the question using DeepSeek."""
     skeleton = extract_skeleton(file_path)
     
@@ -74,9 +74,23 @@ def generate_relevance(file_path, question, client):
     answer = response.choices[0].message.content.lower().strip()
     return file_path, answer
 
-def create_client(api_key):
+def create_client(api_key: str) -> OpenAI:
     """Create OpenAI client configured for DeepSeek"""
-    return OpenAI(
-        api_key=api_key,
-        base_url="https://api.deepseek.com"
+    return OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+
+
+def evaluate_relevance(client, full_path: str, evaluation_text: str) -> tuple[str, bool]:
+    """Convert LLM's evaluation text into a boolean relevance decision"""
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant that responds with only a single word without elaboration, not even punctuation."},
+        {"role": "user", "content": f"Based on this evaluation:\n\n{evaluation_text}\n\nIs the related file relevant? Answer with only Relevant or Irrelevant"}
+    ]
+
+    response = client.chat.completions.create(
+        model="deepseek-chat",
+        messages=messages,
+        stream=False
     )
+    verdict = response.choices[0].message.content.lower().strip()
+    is_relevant = verdict == "relevant"
+    return full_path, is_relevant
