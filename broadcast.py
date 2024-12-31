@@ -25,6 +25,34 @@ def truncate_skeleton(skeleton, max_tokens):
         
     return skeleton
 
+def check_full_source(file_path, question, client):
+    """Check the full source of a file for relevance"""
+    try:
+        with open(file_path, 'r') as f:
+            source = f.read()
+    except Exception as e:
+        return file_path, f"Error reading file: {e}"
+
+    # Truncate if needed
+    source = truncate_skeleton(source, MAX_TOKENS)  # Reuse truncate function
+    
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant that responds with only a single word without elaboration, not even punctuation."},
+        {"role": "user",
+         "content": f"Given this Java source code:\n\n{source}\n\nIs this code relevant to the question: {question}? Answer with only yes or no"}
+    ]
+
+    try:
+        response = client.chat.completions.create(
+            model="deepseek-chat",
+            messages=messages,
+            stream=False
+        )
+    except BadRequestError as e:
+        return file_path, e
+
+    return file_path, response.choices[0].message.content.lower().strip()
+
 def check_relevance(file_path, question, client):
     """Check if a Java file is relevant to the question using DeepSeek."""
     skeleton = extract_skeleton(file_path)
@@ -50,9 +78,6 @@ def check_relevance(file_path, question, client):
 
     answer = response.choices[0].message.content.lower().strip()
     return file_path, answer
-    if answer == 'yes':
-        return file_path
-    return None
 
 
 def main():
@@ -88,7 +113,27 @@ def main():
         for future in tqdm(futures, total=len(futures), desc="Processing files"):
             results.append(future.result())
     
-    # Print results
+    # Separate files that need full source check
+    source_files = [file for file, result in results if result == 'source']
+    
+    # Second pass for source files
+    if source_files:
+        source_futures = []
+        with ThreadPoolExecutor(max_workers=500) as executor:
+            for file_path in source_files:
+                future = executor.submit(check_full_source, file_path, args.question, client)
+                source_futures.append(future)
+            
+            # Process source results with progress bar
+            source_results = []
+            for future in tqdm(source_futures, total=len(source_futures), desc="Processing full sources"):
+                file, r = future.result()
+                source_results.append((file, 'source -> ' + r))
+        
+        # Update results for source files
+        results = [(f, r) for f, r in results if r != 'source'] + source_results
+
+    # Print final results
     for file, result in results:
         print(f'{file}: {result}')
 
