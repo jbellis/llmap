@@ -1,3 +1,5 @@
+import json
+import datetime
 from openai import OpenAI, BadRequestError
 from deepseek_v2_tokenizer import tokenizer
 from llmap import extract_skeleton
@@ -72,9 +74,21 @@ def generate_relevance(file_path: str, question: str, client: OpenAI) -> tuple[s
         return file_path, e
 
     answer = response.choices[0].message.content.lower().strip()
+    
+    # Log all evaluations in JSONL format
+    eval_data = {
+        "file": file_path,
+        "response": answer,
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+    with open('evaluation.jsonl', 'a') as f:
+        f.write(json.dumps(eval_data) + '\n')
+        
+    # Also log unclear cases separately in JSONL
     if 'unclear' in answer:
-        with open('unclear.txt', 'a') as f:
-            f.write(f"\nFile: {file_path}\nResponse: {answer}\n")
+        with open('unclear.jsonl', 'a') as f:
+            f.write(json.dumps(eval_data) + '\n')
+            
     return file_path, answer
 
 def create_client(api_key: str) -> OpenAI:
