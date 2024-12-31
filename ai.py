@@ -34,7 +34,7 @@ def check_full_source(file_path, question, client):
     messages = [
         {"role": "system", "content": "You are a helpful assistant that responds with only a single word without elaboration, not even punctuation."},
         {"role": "user",
-         "content": f"Given this Java source code:\n\n{source}\n\nIs this code relevant to the question: {question}? Answer with only yes or no"}
+         "content": f"Given this source code:\n\n{source}\n\nIs this code relevant to the problem or question: {question}? Answer with only yes or no"}
     ]
 
     try:
@@ -48,7 +48,7 @@ def check_full_source(file_path, question, client):
 
     return file_path, response.choices[0].message.content.lower().strip()
 
-def check_relevance(file_path, question, client):
+def generate_relevance(file_path, question, client):
     """Check if a Java file is relevant to the question using DeepSeek."""
     skeleton = extract_skeleton(file_path)
     
@@ -57,9 +57,9 @@ def check_relevance(file_path, question, client):
     
     # Create messages 
     messages = [
-        {"role": "system", "content": "You are a helpful assistant that responds with only a single word without elaboration, not even punctuation."},
+        {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
         {"role": "user",
-         "content": f"Given this Java code skeleton:\n\n{skeleton}\n\nIs this code relevant to the question: {question}? Answer with yes or no, or source if you can't tell from the skeleton but the full source could clarify."}
+         "content": f"Given this code skeleton:\n\n{skeleton}\n\nIs this code relevant to the following problem or question: {question}? Give your reasoning, then a final verdict of Relevant, Irrelevant, or Unclear."}
     ]
 
     try:
