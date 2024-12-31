@@ -1,6 +1,7 @@
 import argparse
 import glob
 import os
+import random
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 from llmap import extract_skeleton
@@ -11,6 +12,7 @@ def main():
     parser = argparse.ArgumentParser(description='Check Java files for relevance to a question')
     parser.add_argument('directory', help='Directory containing Java files')
     parser.add_argument('question', help='Question to check relevance against')
+    parser.add_argument('--sample', type=int, help='Number of random files to sample')
     args = parser.parse_args()
     
     # Get API key from environment variable
@@ -24,6 +26,10 @@ def main():
     
     # Get all Java files in the directory
     java_files = glob.glob(os.path.join(args.directory, "**/*.java"), recursive=True)
+    
+    # Sample files if requested
+    if args.sample and args.sample < len(java_files):
+        java_files = random.sample(java_files, args.sample)
     
     # Create thread pool and process files
     with ThreadPoolExecutor(max_workers=500) as executor:
