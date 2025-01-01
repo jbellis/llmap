@@ -4,6 +4,7 @@ from openai import OpenAI, BadRequestError
 from deepseek_v2_tokenizer import tokenizer
 from exceptions import AIException
 from llmap import extract_skeleton
+from textwrap import dedent
 
 MAX_TOKENS = 64000  # Leave some headroom for message scaffolding while staying under 64k token limit
 
@@ -71,11 +72,22 @@ class AI:
         # Truncate if needed
         skeleton = maybe_truncate(skeleton, MAX_TOKENS)
         
-        # Create messages 
+        # Create messages
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
-            {"role": "user",
-             "content": f"Given this code skeleton:\n\n{skeleton}\n\nIs this code relevant to the following problem or question: {question}? Give your reasoning, then a final verdict of Relevant, Irrelevant, or Unclear."}
+            {"role": "user", "content": dedent(f"""
+                Given this code skeleton:
+
+                ```
+                {skeleton}
+                ```
+
+                Is this code relevant to the following problem or question?
+
+                    {question}
+
+                Give your reasoning, then a final verdict of Relevant, Irrelevant, or Unclear.
+            """)}
         ]
 
         try:
