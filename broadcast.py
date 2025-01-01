@@ -2,9 +2,11 @@ import argparse
 import glob
 import os
 import random
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-from ai import generate_relevance, create_client, evaluate_relevance
+from ai import generate_relevance, AI
+from exceptions import AIException
 
 
 def main():
@@ -23,7 +25,7 @@ def main():
         return 1
         
     # Initialize client
-    client = create_client(api_key)
+    client = AI(api_key)
     
     # Get Java files based on input
     if args.file:
@@ -46,7 +48,7 @@ def main():
     with ThreadPoolExecutor(max_workers=500) as executor:
         futures = []
         for file_path in java_files:
-            future = executor.submit(generate_relevance, file_path, args.question, client)
+            future = executor.submit(client.generate_relevance, file_path, args.question)
             futures.append(future)
         
         # Process results with progress bars
@@ -55,12 +57,16 @@ def main():
         relevant_files = []
         
         # First progress bar for generating relevance
+        errors = []
         for future in tqdm(futures, total=len(futures), desc="Generating relevance"):
-            results.append(future.result())
+            try:
+                results.append(future.result())
+            except AIException as e:
+                errors.append(e)
             
         # Submit evaluation tasks
         for file, result in results:
-            eval_future = executor.submit(evaluate_relevance, client, file, result)
+            eval_future = executor.submit(client.evaluate_relevance, file, result)
             eval_futures.append(eval_future)
             
         # Second progress bar for evaluating relevance
@@ -68,6 +74,13 @@ def main():
             _, is_relevant = future.result()
             if is_relevant:
                 relevant_files.append(_)
+
+    # Print any errors to stderr
+    if errors:
+        print("\nErrors encountered:", file=sys.stderr)
+        for error in errors:
+            print(error, file=sys.stderr)
+        print("", file=sys.stderr)
 
     # No extra headers so the output can easily be used in xargs et al
     for file in relevant_files:
