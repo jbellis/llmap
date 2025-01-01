@@ -6,6 +6,8 @@ from llmap import extract_skeleton
 
 MAX_TOKENS = 64000  # Leave some headroom for message scaffolding while staying under 64k token limit
 
+# TODO split up large files into declaration + state + methods and run multiple evaluations
+# against different sets of methods for very large files instead of throwing data away
 def maybe_truncate(text: str, max_tokens: int) -> str:
     """Truncate skeleton to stay under token limit"""
     # Count tokens
