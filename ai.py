@@ -110,11 +110,8 @@ class AI:
 
                     {question}
 
-                Give your reasoning, then a final verdict of one of the following:
-                - Relevant, if you are confident is is relevant to the problem or question
-                - Irrelevant, if you are confident is not relevant to the problem or question
-                - Full Source Needed, if the full source code is needed to make a determination
-                - Escalate, if you are unsure and need to escalate to a human
+                Give your reasoning, then a final verdict of Relevant or Irrelevant.  If the full source code
+                is needed to determine relevance, your final verdict should be "Full Source Needed".
             """)}
         ]
 
