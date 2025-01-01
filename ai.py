@@ -1,3 +1,4 @@
+import os
 import json
 import datetime
 from openai import OpenAI, BadRequestError
@@ -47,7 +48,7 @@ def check_full_source(file_path: str, question: str, client: 'AI') -> tuple[str,
     ]
 
     try:
-        response = client.client.chat.completions.create(
+        response = client.deepseek_client.chat.completions.create(
             model="deepseek-chat",
             messages=messages,
             stream=False
@@ -58,9 +59,19 @@ def check_full_source(file_path: str, question: str, client: 'AI') -> tuple[str,
     return file_path, response.choices[0].message.content.lower().strip()
 
 class AI:
-    def __init__(self, api_key: str):
-        """Create OpenAI client configured for DeepSeek"""
-        self.client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+    def __init__(self):
+        # deepseek client
+        deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
+        if not deepseek_api_key:
+            raise Exception("DEEPSEEK_API_KEY environment variable not set")
+        self.deepseek_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
+
+        # gemini client
+        gemini_api_key = os.getenv('GOOGLE_API_KEY')
+        if not gemini_api_key:
+            raise Exception("GOOGLE_API_KEY environment variable not set")
+        self.gemini_client = OpenAI(api_key=gemini_api_key,
+                                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",)
 
     def generate_relevance(self, full_path: str, question: str) -> tuple[str, str]:
         """
@@ -86,12 +97,13 @@ class AI:
 
                     {question}
 
-                Give your reasoning, then a final verdict of Relevant, Irrelevant, or Unclear.
+                Give your reasoning, then a final verdict of Relevant or Irrelevant.  If the full source code
+                is needed to determine relevance, your final verdict should be "Full Source Needed".
             """)}
         ]
 
         try:
-            response = self.client.chat.completions.create(
+            response = self.deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=messages,
                 stream=False
@@ -110,11 +122,6 @@ class AI:
         with open('evaluation.jsonl', 'a') as f:
             f.write(json.dumps(eval_data) + '\n')
             
-        # Also log unclear cases separately in JSONL
-        if 'unclear' in answer:
-            with open('unclear.jsonl', 'a') as f:
-                f.write(json.dumps(eval_data) + '\n')
-                
         return full_path, answer
 
     def evaluate_relevance(self, full_path: str, evaluation_text: str) -> tuple[str, bool]:
@@ -124,11 +131,23 @@ class AI:
         """
         messages = [
             {"role": "system", "content": "You are a helpful assistant that responds with only a single word without elaboration, not even punctuation."},
-            {"role": "user", "content": f"Based on this evaluation:\n\n{evaluation_text}\n\nIs the related file relevant? Answer with only Relevant or Irrelevant"}
+            {"role": "user", "content": dedent(f"""
+                Based on this evaluation:
+                
+                ```
+                {evaluation_text}
+                ```
+                
+                Was the evaluated file relevant to the following problem or question?
+        
+                    {question}
+        
+                Answer with only Relevant, Irrelevant, or Source.
+            """)}
         ]
 
         try:
-            response = self.client.chat.completions.create(
+            response = self.deepseek_client.chat.completions.create(
                 model="deepseek-chat",
                 messages=messages,
                 stream=False

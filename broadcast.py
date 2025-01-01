@@ -18,14 +18,8 @@ def main():
     parser.add_argument('--sample', type=int, help='Number of random files to sample')
     args = parser.parse_args()
     
-    # Get API key from environment variable
-    api_key = os.getenv('DEEPSEEK_API_KEY')
-    if not api_key:
-        print("Error: DEEPSEEK_API_KEY environment variable not set")
-        return 1
-        
     # Initialize client
-    client = AI(api_key)
+    client = AI()
     
     # Get Java files based on input
     if args.file:
