@@ -5,9 +5,27 @@ from openai import OpenAI, BadRequestError
 from deepseek_v2_tokenizer import tokenizer
 from exceptions import AIException
 from llmap import extract_skeleton
+import re
 from textwrap import dedent
 
-MAX_TOKENS = 64000  # Leave some headroom for message scaffolding while staying under 64k token limit
+MAX_DEEPSEEK_TOKENS = 64_000  # Leave some headroom for message scaffolding while staying under 64k token limit
+MAX_GEMINI_TOKENS = 900_000   # Gemini limit is 1M but we're using the wrong tokenizer so be conservative
+
+def clean_response(text: str) -> str:
+    """Keep only alphanumeric characters and convert to lowercase"""
+    return ''.join(c for c in text.lower() if c.isalnum())
+
+
+def log_evaluation(file_path: str, answer: str) -> None:
+    """Log an evaluation result to the evaluation.jsonl file"""
+    eval_data = {
+        "file": file_path,
+        "response": answer,
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+    with open('evaluation.jsonl', 'a') as f:
+        f.write(json.dumps(eval_data) + '\n')
+
 
 # TODO split up large files into declaration + state + methods and run multiple evaluations
 # against different sets of methods for very large files instead of throwing data away
@@ -27,36 +45,6 @@ def maybe_truncate(text: str, max_tokens: int) -> str:
         
     return text
 
-def check_full_source(file_path: str, question: str, client: 'AI') -> tuple[str, str]:
-    """
-    Check the full source of a file for relevance
-    Raises AIException if a recoverable error occurs.
-    """
-    try:
-        with open(file_path, 'r') as f:
-            source = f.read()
-    except Exception as e:
-        return file_path, f"Error reading file: {e}"
-
-    # Truncate if needed
-    source = maybe_truncate(source, MAX_TOKENS)  # Reuse truncate function
-    
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant that responds with only a single word without elaboration, not even punctuation."},
-        {"role": "user",
-         "content": f"Given this source code:\n\n{source}\n\nIs this code relevant to the problem or question: {question}? Answer with only yes or no"}
-    ]
-
-    try:
-        response = client.deepseek_client.chat.completions.create(
-            model="deepseek-chat",
-            messages=messages,
-            stream=False
-        )
-    except BadRequestError as e:
-        raise AIException("Error evaluating source code", file_path, e)
-
-    return file_path, response.choices[0].message.content.lower().strip()
 
 class AI:
     def __init__(self):
@@ -73,6 +61,31 @@ class AI:
         self.gemini_client = OpenAI(api_key=gemini_api_key,
                                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",)
 
+    def ask_deepseek(self, messages, file_path=None):
+        """Helper method to make requests to DeepSeek API with error handling"""
+        try:
+            response = self.deepseek_client.chat.completions.create(
+                model="deepseek-chat",
+                messages=messages,
+                stream=False
+            )
+            return response
+        except BadRequestError as e:
+            raise AIException("Error evaluating source code", file_path, e)
+
+    def ask_gemini(self, messages, file_path=None):
+        """Helper method to make requests to Gemini API with error handling"""
+        # TODO upgrade to gemini-2.0-flash when available for production
+        try:
+            response = self.gemini_client.chat.completions.create(
+                model="gemini-1.5-flash",
+                messages=messages,
+                stream=False
+            )
+            return response
+        except BadRequestError as e:
+            raise AIException("Error evaluating source code with Gemini", file_path, e)
+
     def generate_relevance(self, full_path: str, question: str) -> tuple[str, str]:
         """
         Check if a source file is relevant to the question using DeepSeek.
@@ -81,7 +94,7 @@ class AI:
         skeleton = extract_skeleton(full_path)
         
         # Truncate if needed
-        skeleton = maybe_truncate(skeleton, MAX_TOKENS)
+        skeleton = maybe_truncate(skeleton, MAX_DEEPSEEK_TOKENS)
         
         # Create messages
         messages = [
@@ -102,32 +115,66 @@ class AI:
             """)}
         ]
 
-        try:
-            response = self.deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=messages,
-                stream=False
-            )
-        except BadRequestError as e:
-            raise AIException("Error evaluating source code", full_path, e)
-
-        answer = response.choices[0].message.content.lower().strip()
-        
-        # Log all evaluations in JSONL format
-        eval_data = {
-            "file": full_path,
-            "response": answer,
-            "timestamp": datetime.datetime.now().isoformat()
-        }
-        with open('evaluation.jsonl', 'a') as f:
-            f.write(json.dumps(eval_data) + '\n')
-            
+        response = self.ask_deepseek(messages, full_path)
+        answer = response.choices[0].message.content
+        log_evaluation(full_path, answer)
         return full_path, answer
 
-    def evaluate_relevance(self, full_path: str, evaluation_text: str) -> tuple[str, bool]:
+    def generate_relevance_full_source(self, file_path: str, question: str) -> tuple[str, str]:
         """
-        Convert LLM's evaluation text into a boolean relevance decision
+        Check the full source of a file for relevance
+        Returns tuple of (file_path, evaluation_text)
         Raises AIException if a recoverable error occurs.
+        """
+        try:
+            with open(file_path, 'r') as f:
+                source = f.read()
+        except Exception as e:
+            raise AIException(f"Error reading file: {e}", file_path)
+
+        if len(tokenizer.encode(source)) > MAX_DEEPSEEK_TOKENS:
+            source = maybe_truncate(source, MAX_GEMINI_TOKENS)
+            f = self.ask_gemini
+        else:
+            f = self.ask_deepseek
+
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
+            {"role": "user", "content": dedent(f"""
+                Given this code:
+
+                ```
+                {source}
+                ```
+
+                Is this code relevant to the following problem or question?
+
+                    {question}
+
+                Give your reasoning, then a final verdict of Relevant or Irrelevant.
+            """)}
+        ]
+
+        response = f(messages, file_path)
+        answer = response.choices[0].message.content
+        log_evaluation(file_path, answer)
+        return file_path, answer
+
+    def evaluate_relevance(self, full_path: str, evaluation_text: str, question: str, source_fallback: bool) -> tuple[str, str]:
+        """
+        Convert LLM's evaluation text into a relevance decision
+        
+        Args:
+            full_path: Path to the source file
+            evaluation_text: Text from LLM evaluation
+            question: Original question being evaluated
+            source_fallback: True if we should allow the LLM to request a second evaluation with the full source
+            
+        Returns:
+            String verdict: "relevant", "irrelevant" or "source"
+            
+        Raises:
+            AIException if a recoverable error occurs
         """
         messages = [
             {"role": "system", "content": "You are a helpful assistant that responds with only a single word without elaboration, not even punctuation."},
@@ -142,18 +189,9 @@ class AI:
         
                     {question}
         
-                Answer with only Relevant, Irrelevant, or Source.
+                Answer with only Relevant or Irrelevant{', or Source' if source_fallback else ''}.
             """)}
         ]
 
-        try:
-            response = self.deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=messages,
-                stream=False
-            )
-        except BadRequestError as e:
-            raise AIException("Error evaluating relevance", full_path, e)
-        verdict = response.choices[0].message.content.lower().strip()
-        is_relevant = verdict == "relevant"
-        return full_path, is_relevant
+        response = self.ask_deepseek(messages, full_path)
+        return full_path, clean_response(response.choices[0].message.content)

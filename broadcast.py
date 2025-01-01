@@ -5,7 +5,7 @@ import random
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
-from ai import generate_relevance, AI
+from ai import AI
 from exceptions import AIException
 
 
@@ -38,36 +38,61 @@ def main():
         if args.sample and args.sample < len(java_files):
             java_files = random.sample(java_files, args.sample)
     
-    # Create thread pool and process files
-    with ThreadPoolExecutor(max_workers=500) as executor:
-        futures = []
-        for file_path in java_files:
-            future = executor.submit(client.generate_relevance, file_path, args.question)
-            futures.append(future)
-        
-        # Process results with progress bars
+    def process_batch(executor, files, process_fn, desc):
+        """Process a batch of files and return results, tracking errors"""
+        futures = [executor.submit(process_fn, f) for f in files]
         results = []
-        eval_futures = []
-        relevant_files = []
-        
-        # First progress bar for generating relevance
         errors = []
-        for future in tqdm(futures, total=len(futures), desc="Generating relevance"):
+        
+        for future in tqdm(futures, desc=desc):
             try:
                 results.append(future.result())
             except AIException as e:
                 errors.append(e)
+        return results, errors
+
+    # Create thread pool and process files
+    errors = []
+    relevant_files = []
+    with ThreadPoolExecutor(max_workers=500) as executor:
+        # Phase 1: Generate initial relevance
+        gen_fn = lambda f: client.generate_relevance(f, args.question)
+        initial_results, phase1_errors = process_batch(
+            executor, java_files, gen_fn, "Generating relevance")
+        errors.extend(phase1_errors)
+        
+        # Phase 2: Evaluate initial results
+        eval_fn = lambda r: client.evaluate_relevance(r[0], r[1], args.question, True)
+        eval_results, phase2_errors = process_batch(
+            executor, initial_results, eval_fn, "Evaluating relevance")
+        errors.extend(phase2_errors)
+        
+        # Sort results into relevant files and those needing full source
+        needs_full_source = []
+        for file_path, verdict in eval_results:
+            if verdict == "relevant":
+                relevant_files.append(file_path)
+            elif verdict == "source":
+                needs_full_source.append(file_path)
+
+        # Phase 3: Process files needing full source check
+        if needs_full_source:
+            # Generate full source relevance
+            gen_full_fn = lambda f: client.generate_relevance_full_source(f, args.question)
+            full_results, phase3_errors = process_batch(
+                executor, needs_full_source, gen_full_fn, "Checking full source")
+            errors.extend(phase3_errors)
             
-        # Submit evaluation tasks
-        for file, result in results:
-            eval_future = executor.submit(client.evaluate_relevance, file, result)
-            eval_futures.append(eval_future)
+            # Evaluate full source results
+            eval_full_fn = lambda r: client.evaluate_relevance(r[0], r[1], args.question, False)
+            full_eval_results, phase4_errors = process_batch(
+                executor, full_results, eval_full_fn, "Evaluating full source")
+            errors.extend(phase4_errors)
             
-        # Second progress bar for evaluating relevance
-        for future in tqdm(eval_futures, desc="Evaluating relevance"):
-            _, is_relevant = future.result()
-            if is_relevant:
-                relevant_files.append(_)
+            # Add relevant files from full source check
+            for file_path, verdict in full_eval_results:
+                if verdict == "relevant":
+                    relevant_files.append(file_path)
 
     # Print any errors to stderr
     if errors:
