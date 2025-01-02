@@ -5,7 +5,7 @@ import datetime
 from openai import OpenAI, BadRequestError
 from deepseek_v2_tokenizer import tokenizer
 from exceptions import AIException
-from llmap import extract_skeleton
+from parse import extract_skeleton
 import re
 from textwrap import dedent
 
