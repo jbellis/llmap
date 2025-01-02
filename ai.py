@@ -100,18 +100,19 @@ class AI:
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
             {"role": "user", "content": dedent(f"""
-                Given this code skeleton:
+                Given the following question,
+                
+                ```
+                {question}
+                ```
+
+                Evaluate this source code skeleton for relevance to the question.  Give an overall summary, then give
+                the most relevant section(s) of code, if any.  If the implementation details are key to 
+                determining relevance, respond with "Full Source Required" after explaining your reasoning.
 
                 ```
                 {skeleton}
                 ```
-
-                Is this code relevant to the following problem or question?
-
-                    {question}
-
-                Give your reasoning, then a final verdict of Relevant or Irrelevant.  If the full source code
-                is needed to determine relevance, your final verdict should be "Full Source Needed".
             """)}
         ]
 
@@ -141,17 +142,18 @@ class AI:
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
             {"role": "user", "content": dedent(f"""
-                Given this code:
+                Given the following question,
+                
+                ```
+                {question}
+                ```
+
+                Evaluate this source code for relevance to the question.  Give an overall summary, then give
+                the most relevant section(s) of code, if any.
 
                 ```
                 {source}
                 ```
-
-                Is this code relevant to the following problem or question?
-
-                    {question}
-
-                Give your reasoning, then a final verdict of Relevant or Irrelevant.
             """)}
         ]
 
@@ -189,7 +191,10 @@ class AI:
         
                     {question}
         
-                Answer with only Relevant or Irrelevant{', or Source' if source_fallback else ''}.
+                Answer with exactly one of these words:
+                - "Relevant" if the file was definitely relevant
+                - "Irrelevant" if the file was definitely not relevant
+                {'- "Source" if the evaluation states or implies that the implementation details of the full source code are needed' if source_fallback else ''}
             """)}
         ]
 
