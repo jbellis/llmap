@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import datetime
 from openai import OpenAI, BadRequestError
@@ -69,6 +70,9 @@ class AI:
                 messages=messages,
                 stream=False
             )
+            if os.getenv('LLMAP_VERBOSE'):
+                print(f"DeepSeek response for {file_path}:", file=sys.stderr)
+                print("\t" + response.choices[0].message.content, file=sys.stderr)
             return response
         except BadRequestError as e:
             raise AIException("Error evaluating source code", file_path, e)
@@ -82,6 +86,9 @@ class AI:
                 messages=messages,
                 stream=False
             )
+            if os.getenv('LLMAP_VERBOSE'):
+                print(f"Gemini response for {file_path}:", file=sys.stderr)
+                print("\t" + response.choices[0].message.content, file=sys.stderr)
             return response
         except BadRequestError as e:
             raise AIException("Error evaluating source code with Gemini", file_path, e)
@@ -107,8 +114,10 @@ class AI:
                 ```
 
                 Evaluate this source code skeleton for relevance to the question.  Give an overall summary, then give
-                the most relevant section(s) of code, if any.  If the implementation details are key to 
-                determining relevance, respond with "Full Source Required" after explaining your reasoning.
+                the most relevant section(s) of code, if any.  If the implementation details OF THIS FILE are key to
+                determining relevance, respond with "Full Source Required" after explaining your reasoning.  It is not
+                appropriate to respond with "Full Source Required" if it is clear from the skeleton that this file is not
+                relevant.
 
                 ```
                 {skeleton}
