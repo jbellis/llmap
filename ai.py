@@ -2,6 +2,8 @@ import os
 import sys
 import json
 import datetime
+import threading
+
 from openai import OpenAI, BadRequestError
 from deepseek_v2_tokenizer import tokenizer
 from exceptions import AIException
@@ -61,6 +63,7 @@ class AI:
             raise Exception("GOOGLE_API_KEY environment variable not set")
         self.gemini_client = OpenAI(api_key=gemini_api_key,
                                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",)
+        self.gemini_lock = threading.Lock()
 
     def ask_deepseek(self, messages, file_path=None):
         """Helper method to make requests to DeepSeek API with error handling"""
@@ -80,18 +83,19 @@ class AI:
     def ask_gemini(self, messages, file_path=None):
         """Helper method to make requests to Gemini API with error handling"""
         # TODO upgrade to gemini-2.0-flash when available for production
-        try:
-            response = self.gemini_client.chat.completions.create(
-                model="gemini-1.5-flash",
-                messages=messages,
-                stream=False
-            )
-            if os.getenv('LLMAP_VERBOSE'):
-                print(f"Gemini response for {file_path}:", file=sys.stderr)
-                print("\t" + response.choices[0].message.content, file=sys.stderr)
-            return response
-        except BadRequestError as e:
-            raise AIException("Error evaluating source code with Gemini", file_path, e)
+        with self.gemini_lock:
+            try:
+                response = self.gemini_client.chat.completions.create(
+                    model="gemini-1.5-flash",
+                    messages=messages,
+                    stream=False
+                )
+                if os.getenv('LLMAP_VERBOSE'):
+                    print(f"Gemini response for {file_path}:", file=sys.stderr)
+                    print("\t" + response.choices[0].message.content, file=sys.stderr)
+                return response
+            except BadRequestError as e:
+                raise AIException("Error evaluating source code with Gemini", file_path, e)
 
     def generate_relevance(self, full_path: str, question: str) -> tuple[str, str]:
         """
