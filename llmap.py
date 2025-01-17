@@ -23,9 +23,6 @@ def main():
     parser.add_argument('--save-cache', action='store_true', help='Keep cache directory after completion')
     args = parser.parse_args()
     
-    # Initialize client
-    client = AI()
-    
     # Get Java files based on input
     if args.file:
         if not args.file.endswith('.java'):
@@ -42,14 +39,19 @@ def main():
         # Sample files if requested
         if args.sample and args.sample < len(java_files):
             java_files = random.sample(java_files, args.sample)
-    
-    def get_cache_dir(args):
-        """Create a cache directory name based on command line arguments"""
-        # Create a stable string representation of relevant args
-        cache_key = f"{args.question}_{args.directory or args.file}_{args.sample or 'all'}"
-        # Hash it to get a safe directory name
-        cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
-        return Path(".llmap_cache") / cache_hash
+
+    # Setup cache directory
+    cache_key = f"{args.question}_{args.directory or args.file}_{args.sample or 'all'}"
+    # Hash it to get a safe directory name
+    cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
+    cache_dir = Path(".llmap_cache") / cache_hash
+    if cache_dir.exists():
+        print(f"Using cache directory: {cache_dir}")
+    else:
+        print(f"Creating cache directory: {cache_dir}")
+
+    # Initialize client
+    client = AI(cache_dir)
 
     def load_cached_results(cache_path, phase):
         """Load cached results and errors for a phase"""
@@ -120,13 +122,6 @@ def main():
             
         return results, errors
 
-    # Setup cache directory
-    cache_dir = get_cache_dir(args)
-    if cache_dir.exists():
-        print(f"Using cache directory: {cache_dir}")
-    else:
-        print(f"Creating cache directory: {cache_dir}")
-        
     # Create thread pool and process files
     errors = []
     relevant_files = []

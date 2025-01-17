@@ -1,14 +1,16 @@
 import os
+import os.path
 import sys
 import json
+import hashlib
 import datetime
 import threading
 
-from openai import OpenAI, BadRequestError
+from openai import OpenAI, BadRequestError, RateLimitError
 from deepseek_v2_tokenizer import tokenizer
 from exceptions import AIException
 from parse import extract_skeleton
-import re
+import time
 from textwrap import dedent
 
 MAX_DEEPSEEK_TOKENS = 64_000  # Leave some headroom for message scaffolding while staying under 64k token limit
@@ -50,7 +52,9 @@ def maybe_truncate(text: str, max_tokens: int) -> str:
 
 
 class AI:
-    def __init__(self):
+    def __init__(self, cache_dir):
+        self.cache_dir = cache_dir
+
         # deepseek client
         deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
         if not deepseek_api_key:
@@ -84,18 +88,29 @@ class AI:
         """Helper method to make requests to Gemini API with error handling"""
         # TODO upgrade to gemini-2.0-flash when available for production
         with self.gemini_lock:
-            try:
-                response = self.gemini_client.chat.completions.create(
-                    model="gemini-1.5-flash",
-                    messages=messages,
-                    stream=False
-                )
-                if os.getenv('LLMAP_VERBOSE'):
-                    print(f"Gemini response for {file_path}:", file=sys.stderr)
-                    print("\t" + response.choices[0].message.content, file=sys.stderr)
-                return response
-            except BadRequestError as e:
-                raise AIException("Error evaluating source code with Gemini", file_path, e)
+            retry_count = 0
+            while True:
+                try:
+                    response = self.gemini_client.chat.completions.create(
+                        model="gemini-1.5-flash",
+                        messages=messages,
+                        stream=False
+                    )
+                    if os.getenv('LLMAP_VERBOSE'):
+                        print(f"Gemini response for {file_path}:", file=sys.stderr)
+                        print("\t" + response.choices[0].message.content, file=sys.stderr)
+                    return response
+                except BadRequestError as e:
+                    raise AIException("Error evaluating source code with Gemini", file_path, e)
+                except RateLimitError as e:
+                    retry_count += 1
+                    if retry_count >= 3:
+                        raise AIException("Exceeded maximum retries (3) for rate limit backoff with Gemini API", file_path, e)
+                    wait_time = retry_count * 5  # 5, 10, 15 seconds
+                    print(f"Rate limited, waiting {wait_time} seconds (attempt {retry_count}/3)", file=sys.stderr)
+                    time.sleep(wait_time)
+                    continue
+
 
     def generate_relevance(self, full_path: str, question: str) -> tuple[str, str]:
         """
@@ -170,8 +185,27 @@ class AI:
             """)}
         ]
 
+        # Create cache key from messages
+        cache_key = hashlib.sha256(json.dumps(messages).encode()).hexdigest()
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
+
+        # Try to load from cache
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r') as f:
+                cached_data = json.load(f)
+                return file_path, cached_data['answer']
+
+        # Call LLM if not in cache
         response = f(messages, file_path)
+        
+        # Save successful response to cache
         answer = response.choices[0].message.content
+        os.makedirs(self.cache_dir, exist_ok=True)
+        with open(cache_file, 'w') as f:
+            json.dump({
+                'answer': answer,
+                'timestamp': datetime.datetime.now().isoformat()
+            }, f)
         log_evaluation(file_path, answer)
         return file_path, answer
 
