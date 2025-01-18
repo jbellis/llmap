@@ -47,9 +47,11 @@ Errors are logged to stderr.
 
 You can see the skeletonized code that llmap sends to the LLM with `parse.py`
 ```bash
-python parse.py [filename]
+python parse.py skeleton [filename]
 ```
 
 `llmap.py` also takes some debugging parameters, and running it with env variable `LLMAP_VERBOSE=1` will print out each LLM response.
+
+Use `--no-refine` to give the raw analysis from stage 2.
 
 Use `--save-cache` to preserve the cache directory, otherwise it is cleaned out on successful completion.
