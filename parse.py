@@ -230,6 +230,9 @@ def chunk(source_file: str, max_tokens=50_000):
     Break the file's code into chunks that do not exceed 'max_tokens',
     preserving the top-level head block and grouping items sensibly.
     """
+    if source_file.endswith('.py'):
+        # chunking not yet supported for Python
+        return [Path(source_file).read_text()]
     code_str, code_bytes, tree, ir = parse_code(source_file)
     return chunk_from_ir_with_head(ir, tree.root_node, code_str, max_tokens)
 
