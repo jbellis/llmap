@@ -10,6 +10,7 @@ from pathlib import Path
 from tqdm import tqdm
 from ai import AI, collate
 from exceptions import AIException
+from parse import chunk
 
 
 def main():
@@ -18,6 +19,7 @@ def main():
     parser.add_argument('--sample', type=int, help='Number of random files to sample')
     parser.add_argument('--save-cache', action='store_true', help='Keep cache directory after completion')
     parser.add_argument('--llm-concurrency', type=int, default=500, help='Maximum number of concurrent LLM requests')
+    parser.add_argument('--no-refine', action='store_false', dest='refine', help='Skip refinement and combination of analyses')
     args = parser.parse_args()
 
     # Read Java files from stdin
@@ -142,22 +144,62 @@ def main():
         # Add non-Java files directly to relevant_files for full source analysis
         relevant_files.extend(other_files)
 
-        # Phase 2: extract source code chunks from relevant files
-        gen_full_fn = lambda f: client.full_source_relevance(f, args.question)
-        full_results, phase3_errors = process_batch(
-            executor, relevant_files, gen_full_fn, "Full source analysis",
-            cache_path=cache_dir, phase="full_source")
-        errors.extend(phase3_errors)
+        # Phase 2: extract and analyze source code chunks from relevant files
+        chunk_results = []
+        phase2_errors = []
+        
+        # Get all chunks in parallel
+        file_chunks = {}
+        chunk_futures = []
+        for file_path in relevant_files:
+            future = executor.submit(chunk, file_path)
+            chunk_futures.append((file_path, future))
+            
+        for file_path, future in tqdm(chunk_futures, desc="Parsing full source"):
+            chunks = future.result()
+            if chunks:
+                file_chunks[file_path] = chunks
+
+        # Analyze all chunks in parallel
+        chunk_analyses = {}
+        chunk_futures = []
+        for file_path, chunks in file_chunks.items():
+            for chunk_text in chunks:
+                future = executor.submit(client.full_source_relevance, chunk_text, args.question, file_path)
+                chunk_futures.append((file_path, future))
+
+        # Collect results
+        for file_path, future in tqdm(chunk_futures, desc="Analyzing full source"):
+            try:
+                result = future.result()
+                if result:
+                    if file_path not in chunk_analyses:
+                        chunk_analyses[file_path] = []
+                    chunk_analyses[file_path].append(result[1])
+            except Exception as e:
+                print(f"Error analyzing chunk from {file_path}: {e}", file=sys.stderr)
+                phase2_errors.append(AIException(str(e), file_path))
+
+        # Combine analyses per file
+        for file_path, analyses in chunk_analyses.items():
+            combined = "\n\n".join(analyses)
+            chunk_results.append((file_path, combined))
+                
+        errors.extend(phase2_errors)
 
         # Collate and process results
-        groups, large_files = collate(full_results)
+        groups, large_files = collate(chunk_results)
 
-        # Process groups in parallel
-        sift_fn = lambda g: client.sift_context(g, args.question)
-        processed_contexts, phase4_errors = process_batch(
-            executor, groups, sift_fn, "Refining analysis",
-            cache_path=cache_dir, phase="sift_context")
-        errors.extend(phase4_errors)
+        # Refine groups in parallel
+        if args.refine:
+            sift_fn = lambda g: client.sift_context(g, args.question)
+            processed_contexts, phase4_errors = process_batch(
+                executor, groups, sift_fn, "Refining analysis",
+                cache_path=cache_dir, phase="sift_context")
+            errors.extend(phase4_errors)
+        else:
+            # If no refinement, just flatten the groups into individual results
+            processed_contexts = [analysis for group in groups for _, analysis in group]
 
     # Print any errors to stderr
     if errors:

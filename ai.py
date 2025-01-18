@@ -119,34 +119,6 @@ class AI:
         except BadRequestError as e:
             raise AIException("Error evaluating source code", file_path, e)
 
-    def ask_gemini(self, messages, file_path=None):
-        """Helper method to make requests to Gemini API with error handling"""
-        # TODO upgrade to gemini-2.0-flash when available for production
-        with self.gemini_lock:
-            retry_count = 0
-            while True:
-                try:
-                    response = self.gemini_client.chat.completions.create(
-                        model="gemini-1.5-flash",
-                        messages=messages,
-                        stream=False
-                    )
-                    if os.getenv('LLMAP_VERBOSE'):
-                        print(f"Gemini response for {file_path}:", file=sys.stderr)
-                        print("\t" + response.choices[0].message.content, file=sys.stderr)
-                    return response
-                except BadRequestError as e:
-                    raise AIException("Error evaluating source code with Gemini", file_path, e)
-                except RateLimitError as e:
-                    retry_count += 1
-                    if retry_count >= 3:
-                        raise AIException("Exceeded maximum retries (3) for rate limit backoff with Gemini API", file_path, e)
-                    wait_time = retry_count * 5  # 5, 10, 15 seconds
-                    print(f"Rate limited, waiting {wait_time} seconds (attempt {retry_count}/3)", file=sys.stderr)
-                    time.sleep(wait_time)
-                    continue
-
-
     def skeleton_relevance(self, full_path: str, question: str) -> tuple[str, str]:
         """
         Check if a source file is relevant to the question using DeepSeek.
@@ -186,31 +158,20 @@ class AI:
         answer = response.choices[0].message.content
         return full_path, answer
 
-    def full_source_relevance(self, file_path: str, question: str) -> tuple[str, str]:
+    def full_source_relevance(self, source: str, question: str, file_path: str = None) -> tuple[str, str]:
         """
-        Check the full source of a file for relevance
+        Check source code for relevance
+        Args:
+            source: The source code to analyze
+            question: The question to check relevance against
+            file_path: Optional file path for error reporting
         Returns tuple of (file_path, evaluation_text)
         Raises AIException if a recoverable error occurs.
         """
-        try:
-            with open(file_path, 'r') as f:
-                source = f.read()
-        except Exception as e:
-            raise AIException(f"Error reading file: {e}", file_path)
-
-        if len(tokenizer.encode(source)) > MAX_DEEPSEEK_TOKENS:
-            source = maybe_truncate(source, MAX_GEMINI_TOKENS)
-            f = self.ask_gemini
-        else:
-            f = self.ask_deepseek
-
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
+            {"role": "user", "content": source},
             {"role": "user", "content": dedent(f"""
-                ```
-                {source}
-                ```
-
                 Evaluate the above source code for relevance to the following question:
                 ```
                 {question}
@@ -234,7 +195,7 @@ class AI:
                 return file_path, cached_data['answer']
 
         # Call LLM if not in cache
-        response = f(messages, file_path)
+        response = self.ask_deepseek(messages, file_path)
         
         # Save successful response to cache
         answer = response.choices[0].message.content
