@@ -13,12 +13,12 @@ QUERIES = {
 def token_count(text: str) -> int:
     return len(tokenizer.encode(text))
 
-def maybe_truncate(text, max_tokens, what, stderr):
+def maybe_truncate(text, max_tokens, what):
     """Truncate 'text' to 'max_tokens' tokens if needed and log to stderr."""
     encoded = tokenizer.encode(text)
     if len(encoded) <= max_tokens:
         return text
-    print(f"[WARN] {what} exceeds {max_tokens} tokens; truncating.", file=stderr)
+    print(f"[WARN] {what} exceeds {max_tokens} tokens; truncating.", file=sys.stderr)
     return tokenizer.decode(encoded[:max_tokens])
 
 def get_query(file_path: str) -> str:
@@ -172,7 +172,7 @@ def chunk_from_ir_with_head(ir, root_node, code_str, max_tokens=65536):
         snippet = b['text']
         tcount = token_count(snippet)
         if tcount > body_budget:
-            snippet = maybe_truncate(snippet, body_budget, "Large IR block", sys.stderr)
+            snippet = maybe_truncate(snippet, body_budget, "Large IR block")
             tcount = token_count(snippet)
         if current_tokens + tcount > body_budget:
             flush()
@@ -232,7 +232,8 @@ def chunk(source_file: str, max_tokens=50_000):
     """
     if source_file.endswith('.py'):
         # chunking not yet supported for Python
-        return [Path(source_file).read_text()]
+        truncated = maybe_truncate(Path(source_file).read_text(), max_tokens, source_file)
+        return [truncated]
     code_str, code_bytes, tree, ir = parse_code(source_file)
     return chunk_from_ir_with_head(ir, tree.root_node, code_str, max_tokens)
 
