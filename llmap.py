@@ -1,5 +1,4 @@
 import argparse
-import glob
 import hashlib
 import json
 import os
@@ -14,34 +13,31 @@ from exceptions import AIException
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Check Java files for relevance to a question')
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--directory', help='Directory containing Java files')
-    group.add_argument('--file', help='Single Java file to check')
+    parser = argparse.ArgumentParser(description='Analyze source files for relevance to a question')
     parser.add_argument('question', help='Question to check relevance against')
     parser.add_argument('--sample', type=int, help='Number of random files to sample')
     parser.add_argument('--save-cache', action='store_true', help='Keep cache directory after completion')
     args = parser.parse_args()
-    
-    # Get Java files based on input
-    if args.file:
-        if not args.file.endswith('.java'):
-            print("Error: File must be a Java file")
-            return 1
-        if not os.path.isfile(args.file):
-            print(f"Error: File {args.file} does not exist")
-            return 1
-        java_files = [args.file]
-    else:
-        # Get all Java files in the directory
-        java_files = glob.glob(os.path.join(args.directory, "**/*.java"), recursive=True)
-        
-        # Sample files if requested
-        if args.sample and args.sample < len(java_files):
-            java_files = random.sample(java_files, args.sample)
+
+    # Read Java files from stdin
+    source_files = []
+    for line in sys.stdin:
+        file_path = line.strip()
+        if not os.path.isfile(file_path):
+            print(f"Warning: File does not exist: {file_path}", file=sys.stderr)
+            continue
+        source_files.append(file_path)
+
+    if not source_files:
+        print("Error: No valid Java files provided", file=sys.stderr)
+        return 1
+
+    # Sample files if requested
+    if args.sample and args.sample < len(source_files):
+        source_files = random.sample(source_files, args.sample)
 
     # Setup cache directory
-    cache_key = f"{args.question}_{args.directory or args.file}_{args.sample or 'all'}"
+    cache_key = f"{args.question}_{len(source_files)}_{args.sample or 'all'}"
     # Hash it to get a safe directory name
     cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
     cache_dir = Path(".llmap_cache") / cache_hash
@@ -129,7 +125,7 @@ def main():
         # Phase 1: Generate initial relevance
         gen_fn = lambda f: client.skeleton_relevance(f, args.question)
         skeleton_results, phase1_errors = process_batch(
-            executor, java_files, gen_fn, "Skeleton analysis",
+            executor, source_files, gen_fn, "Skeleton analysis",
             cache_path=cache_dir, phase="skeleton")
         errors.extend(phase1_errors)
         # parse out the conclusion
