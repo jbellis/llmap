@@ -1,5 +1,3 @@
-# pip3 install transformers
-# python3 __init__.py
 import os
 import transformers
 
