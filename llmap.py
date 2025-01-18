@@ -122,16 +122,24 @@ def main():
     errors = []
     relevant_files = []
     with ThreadPoolExecutor(max_workers=500) as executor:
-        # Phase 1: Generate initial relevance
-        gen_fn = lambda f: client.skeleton_relevance(f, args.question)
-        skeleton_results, phase1_errors = process_batch(
-            executor, source_files, gen_fn, "Skeleton analysis",
-            cache_path=cache_dir, phase="skeleton")
-        errors.extend(phase1_errors)
-        # parse out the conclusion
-        for file_path, analysis in skeleton_results:
-            if 'LLMAP_RELEVANT' in analysis or 'LLMAP_SOURCE' in analysis:
-                relevant_files.append(file_path)
+        # Split files by extension
+        java_files = [f for f in source_files if f.endswith('.java')]
+        other_files = [f for f in source_files if not f.endswith('.java')]
+
+        # Phase 1: Generate initial relevance against skeletons for Java files
+        if java_files:
+            gen_fn = lambda f: client.skeleton_relevance(f, args.question)
+            skeleton_results, phase1_errors = process_batch(
+                executor, java_files, gen_fn, "Skeleton analysis",
+                cache_path=cache_dir, phase="skeleton")
+            errors.extend(phase1_errors)
+            # parse out the conclusion
+            for file_path, analysis in skeleton_results:
+                if 'LLMAP_RELEVANT' in analysis or 'LLMAP_SOURCE' in analysis:
+                    relevant_files.append(file_path)
+
+        # Add non-Java files directly to relevant_files for full source analysis
+        relevant_files.extend(other_files)
 
         # Phase 2: extract source code chunks from relevant files
         gen_full_fn = lambda f: client.full_source_relevance(f, args.question)
