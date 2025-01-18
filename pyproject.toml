@@ -8,7 +8,24 @@ version = "0.1"
 authors = [
     { name = "Jonathan Ellis", email = "jbellis@gmail.com" },
 ]
-description = "Code search using DeepSeek V3"
+description = """
+LLMap is a high-performance CLI code search tool designed for use with large codebases.
+Uses DeepSeek-V3 to intelligently identify relevant code context through multi-stage analysis:
+
+1. Fast skeleton-based pre-filtering
+2. Targeted deep analysis
+3. Smart context refinement
+
+Features:
+- Massively parallel search
+- Smart caching for speed and cost optimization
+- Multi-stage filtering to minimize processing
+- Built for integration with AI coding assistants
+
+Currently supports Python and Java skeletonization, with full-text analysis for other languages.
+
+Perfect for finding precise context to feed into AI code-authoring tools like Aider and Cursor.
+"""
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [

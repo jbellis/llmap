@@ -18,7 +18,7 @@ from .parse import chunk
 def main():
     parser = argparse.ArgumentParser(description='Analyze source files for relevance to a question')
     parser.add_argument('question', help='Question to check relevance against')
-    parser.add_argument('--sample', type=int, help='Number of random files to sample')
+    parser.add_argument('--sample', type=int, help='Number of random files to sample from the input set')
     parser.add_argument('--save-cache', action='store_true', help='Keep cache directory after completion')
     parser.add_argument('--llm-concurrency', type=int, default=500, help='Maximum number of concurrent LLM requests')
     parser.add_argument('--no-refine', action='store_false', dest='refine', help='Skip refinement and combination of analyses')
