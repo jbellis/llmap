@@ -67,17 +67,6 @@ def clean_response(text: str) -> str:
     return ''.join(c for c in text.lower() if c.isalnum())
 
 
-def log_evaluation(file_path: str, answer: str) -> None:
-    """Log an evaluation result to the evaluation.jsonl file"""
-    eval_data = {
-        "file": file_path,
-        "response": answer,
-        "timestamp": datetime.datetime.now().isoformat()
-    }
-    with open('evaluation.jsonl', 'a') as f:
-        f.write(json.dumps(eval_data) + '\n')
-
-
 # TODO split up large files into declaration + state + methods and run multiple evaluations
 # against different sets of methods for very large files instead of throwing data away
 def maybe_truncate(text: str, max_tokens: int) -> str:
@@ -192,7 +181,6 @@ class AI:
             raise AIException("Failed to get a valid response from DeepSeek", full_path)
 
         answer = response.choices[0].message.content
-        log_evaluation(full_path, answer)
         return full_path, answer
 
     def full_source_relevance(self, file_path: str, question: str) -> tuple[str, str]:
@@ -250,7 +238,6 @@ class AI:
                 'answer': answer,
                 'timestamp': datetime.datetime.now().isoformat()
             }, f)
-        log_evaluation(file_path, answer)
         return file_path, answer
 
     def sift_context(self, file_group: list[tuple[str, str]], question: str) -> str:
