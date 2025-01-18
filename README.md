@@ -16,7 +16,7 @@ so it's reasonably fast even for large codebases.
 
 ## Limitations
 
-Currently only Java files are supported by the skeletonization in parse.py.
+Currently only Java and Python files are supported by the skeletonization in parse.py.
 
 LLMap will process other source files, but it will perform full source analysis on all of them,
 which will be slower.

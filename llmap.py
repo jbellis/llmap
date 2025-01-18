@@ -123,15 +123,15 @@ def main():
     errors = []
     relevant_files = []
     with ThreadPoolExecutor(max_workers=args.llm_concurrency) as executor:
-        # Split files by extension
-        java_files = [f for f in source_files if f.endswith('.java')]
-        other_files = [f for f in source_files if not f.endswith('.java')]
+        # Split files by whether we can parse a skeleton
+        parseable_files = {f for f in source_files if f.endswith('.java') or f.endswith('.py')}
+        other_files = [f for f in source_files if not f in parseable_files]
 
         # Phase 1: Generate initial relevance against skeletons for Java files
-        if java_files:
+        if parseable_files:
             gen_fn = lambda f: client.skeleton_relevance(f, args.question)
             skeleton_results, phase1_errors = process_batch(
-                executor, java_files, gen_fn, "Skeleton analysis",
+                executor, parseable_files, gen_fn, "Skeleton analysis",
                 cache_path=cache_dir, phase="skeleton")
             errors.extend(phase1_errors)
             # parse out the conclusion

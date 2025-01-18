@@ -6,14 +6,23 @@ from tree_sitter import Query
 from tree_sitter_languages import get_language, get_parser
 
 # Load queries
-QUERY_PATH = Path(__file__).parent / "queries" / "java" / "skeleton.scm"
-SKELETON_QUERY = QUERY_PATH.read_text()
+QUERIES = {
+    '.java': Path(__file__).parent / "queries" / "java" / "skeleton.scm",
+    '.py': Path(__file__).parent / "queries" / "python" / "skeleton.scm"
+}
+
+def get_query(file_path: str):
+    """Get the appropriate query for the file extension"""
+    ext = Path(file_path).suffix
+    if ext not in QUERIES:
+        raise ValueError(f"Unsupported file extension: {ext}")
+    return QUERIES[ext].read_text()
 
 def _format_node(node, indent_level=0):
     """Format a node's text with proper indentation"""
     return "  " * indent_level + node.text.decode('utf8')
 
-def _process_captures(captures, code_bytes):
+def _process_captures(captures, code_bytes, file_ext):
     """Process query captures into skeleton structure"""
     skeleton = []
     
@@ -21,7 +30,7 @@ def _process_captures(captures, code_bytes):
         node = capture[0]
         capture_name = capture[1]
         
-        # Skip annotation captures
+        # Skip Java annotations
         if capture_name == 'annotation':
             continue
             
@@ -57,7 +66,7 @@ def _process_captures(captures, code_bytes):
                 skeleton.append(f"{indent}{text.strip()}")
                 
         elif capture_name == 'field.declaration':
-            # Skip annotations for fields too
+            # skip annotations (only found in Java)
             start_pos = node.start_byte
             for child in node.children:
                 if child.type == 'annotation':
@@ -109,11 +118,14 @@ def _process_captures(captures, code_bytes):
     return '\n'.join(result)
 
 def extract_skeleton(source_file):
-    """Extract class/method signatures from a Java file"""
-    # Load Java parser and query
-    parser = get_parser('java')
-    language = get_language('java')
-    query = language.query(SKELETON_QUERY)
+    """Extract class/method signatures from source file"""
+    # Get file extension and load appropriate parser
+    file_ext = Path(source_file).suffix.lower()
+    lang_name = 'java' if file_ext == '.java' else 'python'
+    
+    parser = get_parser(lang_name)
+    language = get_language(lang_name)
+    query = language.query(get_query(source_file))
     
     # Parse file
     code = Path(source_file).read_text()
@@ -122,7 +134,7 @@ def extract_skeleton(source_file):
     
     # Execute query and process captures
     captures = query.captures(tree.root_node)
-    skeleton = _process_captures(captures, code_bytes)
+    skeleton = _process_captures(captures, code_bytes, file_ext)
     
     return skeleton
 
