@@ -13,8 +13,54 @@ from parse import extract_skeleton
 import time
 from textwrap import dedent
 
+
 MAX_DEEPSEEK_TOKENS = 50_000  # deepseek v2 tokenizer undercounts v3 tokens, this keeps it under the actual 64k limit
 MAX_MINIMAX_TOKENS = 800_000   # Actual limit is 1M but we're using the wrong tokenizer so be conservative
+
+
+def collate(analyses: list[tuple[str, str]]) -> tuple[list[list[tuple[str, str]]], list[tuple[str, str]]]:
+    """
+    Group analyses into batches that fit under token limit, and separate out large files.
+    
+    Args:
+        analyses: List of (file_path, analysis_text) tuples
+    
+    Returns:
+        Tuple of (grouped_analyses, large_files) where:
+        - grouped_analyses is a list of lists of (file_path, analysis) tuples, each group under MAX_DEEPSEEK_TOKENS
+        - large_files is a list of (file_path, analysis) tuples that individually exceed MAX_DEEPSEEK_TOKENS
+    """
+    large_files = []
+    small_files = []
+    
+    # Separate large and small files
+    for file_path, analysis in analyses:
+        tokens = len(tokenizer.encode(analysis))
+        if tokens > MAX_DEEPSEEK_TOKENS:
+            large_files.append((file_path, analysis))
+        else:
+            small_files.append((file_path, analysis, tokens))
+    
+    # Group small files
+    groups = []
+    current_group = []
+    current_tokens = 0
+    
+    for file_path, analysis, tokens in small_files:
+        if current_tokens + tokens > MAX_DEEPSEEK_TOKENS:
+            if current_group:  # Only append if group has items
+                groups.append(current_group)
+            current_group = [(file_path, analysis)]
+            current_tokens = tokens
+        else:
+            current_group.append((file_path, analysis))
+            current_tokens += tokens
+    
+    if current_group:  # Add final group if it exists
+        groups.append(current_group)
+        
+    return groups, large_files
+
 
 def clean_response(text: str) -> str:
     """Keep only alphanumeric characters and convert to lowercase"""
@@ -206,3 +252,35 @@ class AI:
             }, f)
         log_evaluation(file_path, answer)
         return file_path, answer
+
+    def sift_context(self, file_group: list[tuple[str, str]], question: str) -> str:
+        """
+        Process groups of file analyses to extract only the relevant context.
+
+        Args:
+            file_groups: List of lists of (file_path, analysis) tuples
+            question: The original question being analyzed
+
+        Returns:
+            List of processed contexts, one per group
+        """
+        combined = "\n\n".join(f"File: {path}\n{analysis}" for path, analysis in file_group)
+
+        messages = [
+            {"role": "system", "content": "You are a helpful assistant designed to collate source code."},
+            {"role": "user", "content": combined},
+            {"role": "user", "content": dedent(f"""
+                The above text contains analysis of multiple source files related to this question:
+                ```
+                {question}
+                ```
+
+                Extract only the most relevant context and code sections that help answer the question.
+                Remove any irrelevant files completely, but preserve file paths for the relevant code fragments.
+                
+                Do not include additional commentary or analysis of the provided text.
+            """)}
+        ]
+
+        response = self.ask_deepseek(messages)
+        return response.choices[0].message.content

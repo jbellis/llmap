@@ -9,7 +9,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from tqdm import tqdm
-from ai import AI
+from ai import AI, collate
 from exceptions import AIException
 
 
@@ -46,7 +46,7 @@ def main():
     cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
     cache_dir = Path(".llmap_cache") / cache_hash
     if cache_dir.exists():
-        print(f"Using cache directory: {cache_dir}")
+        print(f"Using cache directory: {cache_dir}", file=sys.stderr)
     else:
         print(f"Creating cache directory: {cache_dir}")
 
@@ -144,6 +144,16 @@ def main():
             cache_path=cache_dir, phase="full_source")
         errors.extend(phase3_errors)
 
+        # Collate and process results
+        groups, large_files = collate(full_results)
+
+        # Process groups in parallel
+        sift_fn = lambda g: client.sift_context(g, args.question)
+        processed_contexts, phase4_errors = process_batch(
+            executor, groups, sift_fn, "Refining analysis",
+            cache_path=cache_dir, phase="sift_context")
+        errors.extend(phase4_errors)
+
     # Print any errors to stderr
     if errors:
         print("\nErrors encountered:", file=sys.stderr)
@@ -151,10 +161,11 @@ def main():
             print(error, file=sys.stderr)
         print("", file=sys.stderr)
 
-    # Print relevant files with their analysis
-    # TODO our approach results in a cluttered context (it includes the full "thinking" of the simple model)
-    # it would be nice if we could strip that out without adding yet another pass
-    for file_path, analysis in full_results:
+    # Print results
+    for context in processed_contexts:
+        if context:
+            print(context, '\n')
+    for file_path, analysis in large_files:
         print(f"{file_path}:\n{analysis}\n\n")
         
     # Clean up cache unless --save-cache was specified
