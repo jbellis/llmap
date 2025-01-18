@@ -2,184 +2,129 @@
 
 import sys
 from pathlib import Path
+from tree_sitter import Query
 from tree_sitter_languages import get_language, get_parser
 
-def _process_class(node, indent):
-    """Process a class definition node"""
-    name_node = node.child_by_field_name('name')
-    class_name = name_node.text.decode('utf8') if name_node else 'Anonymous'
+# Load queries
+QUERY_PATH = Path(__file__).parent / "queries" / "java" / "skeleton.scm"
+SKELETON_QUERY = QUERY_PATH.read_text()
 
-    modifiers = []
-    for t in ('class.modifiers', 'class.superclass', 'class.interfaces'):
-        child = node.child_by_field_name('t')
-        if not child:
-            continue
-        modifiers.extend(m.text.decode('utf8') for m in child)
+def _format_node(node, indent_level=0):
+    """Format a node's text with proper indentation"""
+    return "  " * indent_level + node.text.decode('utf8')
 
-    body = node.child_by_field_name('body')
-    return f"{' '.join(modifiers)}class {class_name}", body
-
-def _process_interface(node, indent):
-    """Process an interface definition node"""
-    name_node = node.child_by_field_name('name')
-    interface_name = name_node.text.decode('utf8') if name_node else 'Anonymous'
-    
-    modifiers = node.child_by_field_name('modifiers')
-    mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
-    
-    body = node.child_by_field_name('body')
-    return f"{mod_text}interface {interface_name}", body
-
-def _process_method(node, indent, is_annotation_element=False):
-    """Process a method definition node"""
-    name = node.child_by_field_name('name').text.decode('utf8')
-    type_node = node.child_by_field_name('type')
-    type_text = type_node.text.decode('utf8') if type_node else 'void'
-    params = node.child_by_field_name('parameters').text.decode('utf8')
-    
-    modifiers = node.child_by_field_name('modifiers')
-    mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
-    
-    # Handle default value for annotation elements
-    default = node.child_by_field_name('default_value')
-    default_text = f" default {default.text.decode('utf8')}" if default else ""
-    
-    # For annotation elements, we want the full declaration
-    if is_annotation_element:
-        return f"{indent}{type_text} {name}(){default_text};"
-    
-    # For regular methods
-    return f"{indent}{mod_text}{type_text} {name}{params} {{...}}"
-
-def _process_field(node, indent):
-    """Process a field definition node"""
-    return node.text.decode('utf8')
-
-def _process_annotation(node, indent):
-    """Process an annotation declaration node"""
-    name_node = node.child_by_field_name('name')
-    annotation_name = name_node.text.decode('utf8') if name_node else 'Anonymous'
-    
-    modifiers = node.child_by_field_name('modifiers')
-    mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
-    
-    # Get annotation meta-annotations
-    annotations = _process_annotations(node)
-    
-    body = node.child_by_field_name('body')
-    return f"{annotations}{mod_text}@interface {annotation_name}", body
-
-def _process_enum(node, indent):
-    """Process an enum definition node"""
-    name_node = node.child_by_field_name('name')
-    enum_name = name_node.text.decode('utf8') if name_node else 'Anonymous'
-    
-    modifiers = node.child_by_field_name('modifiers')
-    mod_text = modifiers.text.decode('utf8') + ' ' if modifiers else ''
-    
-    body = node.child_by_field_name('body')
-    
-    # Start with the enum declaration
-    enum_parts = [f"{mod_text}enum {enum_name}"]
-    
-    if body:
-        # First process enum constants
-        constants = []
-        methods = []
-        
-        for child in body.children:
-            if child.type == 'enum_constant':
-                # Just get the identifier part for enum constants
-                const_name = child.child_by_field_name('name')
-                if const_name:
-                    constants.append(indent + "  " + const_name.text.decode('utf8'))
-            elif child.type == 'method_declaration':
-                # Add method signature
-                method_sig = _process_method(child, indent)
-                methods.append(indent + "  " + method_sig)
-            elif child.type == 'enum_body_declarations':
-                # Process methods inside the enum body declarations
-                for method in child.children:
-                    if method.type == 'method_declaration':
-                        method_sig = _process_method(method, indent)
-                        methods.append(indent + "  " + method_sig)
-        
-        # Add constants first, then methods
-        enum_parts.extend(constants)
-        if methods:
-            enum_parts.extend(methods)
-                
-    return "\n".join(enum_parts), None
-
-def _process_node(node, indent_level=0):
-    """Process a node recursively and return its skeleton parts"""
+def _process_captures(captures, code_bytes):
+    """Process query captures into skeleton structure"""
     skeleton = []
-    indent = "  " * indent_level
-
-    for child in node.children:
-        if child.type == 'annotation_type_declaration':
-            signature, body = _process_annotation(child, indent)
-            skeleton.append(indent + signature + " {")
-            if body:
-                # Process annotation elements (methods)
-                for element in body.children:
-                    if element.type == 'method_declaration':
-                        method_sig = _process_method(element, indent + "  ", is_annotation_element=True)
-                        skeleton.append(method_sig)
-            skeleton.append(indent + "}")
-        elif child.type == 'class_declaration':
-            annotations = _process_annotations(child)
-            signature, body = _process_class(child, indent)
-            skeleton.append(indent + annotations + signature)
-            if body:
-                skeleton.extend(_process_node(body, indent_level + 1))
+    
+    for capture in captures:
+        node = capture[0]
+        capture_name = capture[1]
+        
+        # Skip annotation captures
+        if capture_name == 'annotation':
+            continue
             
-        elif child.type == 'interface_declaration':
-            annotations = _process_annotations(child)
-            signature, body = _process_interface(child, indent)
-            skeleton.append(indent + annotations + signature)
-            if body:
-                skeleton.extend(_process_node(body, indent_level + 1))
+        # Calculate indent based on node's start position
+        start_byte = node.start_byte
+        line_start = code_bytes.rfind(b'\n', 0, start_byte) + 1
+        indent = "  " * ((start_byte - line_start) // 2)
+        
+        if capture_name in ('class.declaration', 'interface.declaration', 'annotation.declaration'):
+            # Get text up to body start, skipping annotations
+            body_node = node.child_by_field_name('body')
+            start_pos = node.start_byte
+            # Skip past any annotations
+            for child in node.children:
+                if child.type == 'annotation':
+                    start_pos = child.end_byte
+                elif child.type in ('class_declaration', 'interface_declaration'):
+                    break
+            text = node.text[start_pos - node.start_byte:body_node.start_byte - node.start_byte].decode('utf8')
+            skeleton.append(f"{indent}{text.strip()} {{")
             
-        elif child.type == 'method_declaration':
-            annotations = _process_annotations(child)
-            signature = _process_method(child, indent)
-            skeleton.append(indent + annotations + signature)
+        elif capture_name == 'method.declaration':
+            # Get text up to body (if it exists)
+            body_node = node.child_by_field_name('body')
+            # Find return type node to start from
+            return_type = node.child_by_field_name('type')
+            start_pos = return_type.start_byte if return_type else node.start_byte
+            if body_node:
+                text = node.text[start_pos - node.start_byte:body_node.start_byte - node.start_byte].decode('utf8')
+                skeleton.append(f"{indent}{text.strip()} {{...}}")
+            else:
+                text = node.text[start_pos - node.start_byte:].decode('utf8')
+                skeleton.append(f"{indent}{text.strip()}")
+                
+        elif capture_name == 'field.declaration':
+            # Skip annotations for fields too
+            start_pos = node.start_byte
+            for child in node.children:
+                if child.type == 'annotation':
+                    start_pos = child.end_byte
+                elif child.type == 'field_declaration':
+                    break
+            text = node.text[start_pos - node.start_byte:].decode('utf8')
+            skeleton.append(f"{indent}{text.strip()}")
             
-        elif child.type == 'field_declaration':
-            annotations = _process_annotations(child)
-            text = _process_field(child, indent)
-            skeleton.append(indent + annotations + text)
-            skeleton.append(indent + text)
+        elif capture_name == 'enum.declaration':
+            # Get text up to body, skipping annotations
+            body_node = node.child_by_field_name('body')
+            start_pos = node.start_byte
+            # Skip past any annotations
+            for child in node.children:
+                if child.type == 'annotation':
+                    start_pos = child.end_byte
+                elif child.type == 'enum_declaration':
+                    break
+            text = node.text[start_pos - node.start_byte:body_node.start_byte - node.start_byte].decode('utf8')
+            skeleton.append(f"{indent}{text.strip()} {{")
             
-        elif child.type == 'enum_declaration':
-            signature, body = _process_enum(child, indent)
-            skeleton.append(indent + signature)
-            if body:
-                skeleton.extend(_process_node(body, indent_level + 1))
-
-    return skeleton
-
-def _process_annotations(node):
-    """Extract annotation text from a node"""
-    annotations = []
-    for child in node.children:
-        if child.type == 'marker_annotation' or child.type == 'annotation':
-            annotations.append(child.text.decode('utf8'))
-    return ' '.join(annotations) + ' ' if annotations else ''
+            # Add constants if present
+            constants_node = node.child_by_field_name('constants')
+            if constants_node:
+                skeleton.append(f"{indent}  {constants_node.text.decode('utf8')}")
+    
+    # Add closing braces for containers
+    result = []
+    open_braces = []
+    
+    for line in skeleton:
+        if line.rstrip().endswith(" {"):
+            # Store the actual indentation string by finding leading spaces
+            indent = line[:len(line) - len(line.lstrip())]
+            open_braces.append(indent)
+            result.append(line)
+        else:
+            if open_braces and not line.strip():
+                continue  # Skip empty lines between braces
+            result.append(line)
+            
+    # Add remaining closing braces
+    while open_braces:
+        indent = open_braces.pop()
+        result.append("")  # Add blank line before closing brace
+        result.append(f"{indent}}}")
+    
+    return '\n'.join(result)
 
 def extract_skeleton(source_file):
     """Extract class/method signatures from a Java file"""
-    # Load Java parser
+    # Load Java parser and query
     parser = get_parser('java')
+    language = get_language('java')
+    query = language.query(SKELETON_QUERY)
     
     # Parse file
     code = Path(source_file).read_text()
-    tree = parser.parse(bytes(code, "utf8"))
-
-    # Extract definitions recursively
-    skeleton = _process_node(tree.root_node)
-    return '\n\n'.join(skeleton)
+    code_bytes = bytes(code, "utf8")
+    tree = parser.parse(code_bytes)
+    
+    # Execute query and process captures
+    captures = query.captures(tree.root_node)
+    skeleton = _process_captures(captures, code_bytes)
+    
+    return skeleton
 
 def main():
     if len(sys.argv) < 2:
