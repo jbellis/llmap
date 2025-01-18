@@ -15,7 +15,7 @@ from textwrap import dedent
 
 
 MAX_DEEPSEEK_TOKENS = 50_000  # deepseek v2 tokenizer undercounts v3 tokens, this keeps it under the actual 64k limit
-MAX_MINIMAX_TOKENS = 800_000   # Actual limit is 1M but we're using the wrong tokenizer so be conservative
+MAX_GEMINI_TOKENS = 900_000   # Gemini limit is 1M but we're using the wrong tokenizer so be conservative
 
 
 def collate(analyses: list[tuple[str, str]]) -> tuple[list[list[tuple[str, str]]], list[tuple[str, str]]]:
@@ -96,12 +96,13 @@ class AI:
             raise Exception("DEEPSEEK_API_KEY environment variable not set")
         self.deepseek_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
 
-        # minimax client
-        minimax_api_key = os.getenv('MINIMAX_API_KEY')
-        if not minimax_api_key:
-            raise Exception("MINIMAX_API_KEY environment variable not set")
-        self.minimax_client = OpenAI(api_key=minimax_api_key,
-                                     base_url="https://api.minimaxi.chat/v1",)
+        # gemini client
+        gemini_api_key = os.getenv('GOOGLE_API_KEY')
+        if not gemini_api_key:
+            raise Exception("GOOGLE_API_KEY environment variable not set")
+        self.gemini_client = OpenAI(api_key=gemini_api_key,
+                                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",)
+        self.gemini_lock = threading.Lock()
 
     def ask_deepseek(self, messages, file_path=None):
         """Helper method to make requests to DeepSeek API with error handling"""
@@ -118,30 +119,32 @@ class AI:
         except BadRequestError as e:
             raise AIException("Error evaluating source code", file_path, e)
 
-    def ask_minimax(self, messages, file_path=None):
-        """Helper method to make requests to MiniMax API with error handling"""
-        retry_count = 0
-        while True:
-            try:
-                response = self.minimax_client.chat.completions.create(
-                    model="MiniMax-Text-01",
-                    messages=messages,
-                    stream=False
-                )
-                if os.getenv('LLMAP_VERBOSE'):
-                    print(f"minimax response for {file_path}:", file=sys.stderr)
-                    print("\t" + response.choices[0].message.content, file=sys.stderr)
-                return response
-            except BadRequestError as e:
-                raise AIException("Error evaluating source code with MiniMax", file_path, e)
-            except RateLimitError as e:
-                retry_count += 1
-                if retry_count >= 3:
-                    raise AIException("Exceeded maximum retries (3) for rate limit backoff with minimax API", file_path, e)
-                wait_time = retry_count * 5  # 5, 10, 15 seconds
-                print(f"Rate limited, waiting {wait_time} seconds (attempt {retry_count}/3)", file=sys.stderr)
-                time.sleep(wait_time)
-                continue
+    def ask_gemini(self, messages, file_path=None):
+        """Helper method to make requests to Gemini API with error handling"""
+        # TODO upgrade to gemini-2.0-flash when available for production
+        with self.gemini_lock:
+            retry_count = 0
+            while True:
+                try:
+                    response = self.gemini_client.chat.completions.create(
+                        model="gemini-1.5-flash",
+                        messages=messages,
+                        stream=False
+                    )
+                    if os.getenv('LLMAP_VERBOSE'):
+                        print(f"Gemini response for {file_path}:", file=sys.stderr)
+                        print("\t" + response.choices[0].message.content, file=sys.stderr)
+                    return response
+                except BadRequestError as e:
+                    raise AIException("Error evaluating source code with Gemini", file_path, e)
+                except RateLimitError as e:
+                    retry_count += 1
+                    if retry_count >= 3:
+                        raise AIException("Exceeded maximum retries (3) for rate limit backoff with Gemini API", file_path, e)
+                    wait_time = retry_count * 5  # 5, 10, 15 seconds
+                    print(f"Rate limited, waiting {wait_time} seconds (attempt {retry_count}/3)", file=sys.stderr)
+                    time.sleep(wait_time)
+                    continue
 
 
     def skeleton_relevance(self, full_path: str, question: str) -> tuple[str, str]:
@@ -196,15 +199,18 @@ class AI:
             raise AIException(f"Error reading file: {e}", file_path)
 
         if len(tokenizer.encode(source)) > MAX_DEEPSEEK_TOKENS:
-            source = maybe_truncate(source, MAX_MINIMAX_TOKENS)
-            f = self.ask_minimax
+            source = maybe_truncate(source, MAX_GEMINI_TOKENS)
+            f = self.ask_gemini
         else:
             f = self.ask_deepseek
 
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
-            {"role": "user", "content": source},
             {"role": "user", "content": dedent(f"""
+                ```
+                {source}
+                ```
+
                 Evaluate the above source code for relevance to the following question:
                 ```
                 {question}

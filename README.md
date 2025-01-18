@@ -1,16 +1,17 @@
 # Context extraction at scale
 
-LLMap is a CLI tool that uses AI to perform brute-force RAG against source files using Deepseek v3 and MiniMax-01.
+LLMap is a CLI tool that uses AI to perform brute-force RAG against source files using Deepseek v3 and Gemini Flash.
 
-(Deepseek is preferred internally, but when analysis requires more tokens than Deepseek can handle, MiniMax-01 is used.)
+(Deepseek is preferred internally, but when analysis requires more tokens than Deepseek can handle, Flash is used.)
 
 LLMap performs 3 stages of analysis for each source file:
  1. Coarse analysis using code skeletons
  2. Full source analysis of potentially relevant files from (1)
  3. Refine the output of (2) to only the most relevant snippets
 
-Until recently, this would be prohibitively expensive and slow.  But Deepseek-V3 and MiniMax-01 are cheap, fast, 
-and most importantly, they allow multiple concurrent requests.  LLMap performs the above analysis 500 files at a time,
+Until recently, this would be prohibitively expensive and slow.  But Deepseek-V3 is cheap, smart, fast,
+and most importantly, it allows multiple concurrent requests.  LLMap performs the above analysis
+(by default) 500 files at a time,
 so it's reasonably fast even for large codebases.
 
 ## Limitations
@@ -29,7 +30,7 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-export MINIMAX_API_KEY=XXX
+export GEMINI_API_KEY=XXX
 export DEEPSEEK_API_KEY=YYY
 
 find src/ -name "*.java" | python llmap.py "Where is the database connection configured?"
