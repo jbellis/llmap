@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llmap"
+version = "0.1"
+authors = [
+    { name = "Jonathan Ellis", email = "jbellis@gmail.com" },
+]
+description = "Code search using DeepSeek V3"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "openai>=1.58.1,<2.0.0",
+    "transformers>=4.47.1",
+    "tree-sitter==0.21.3",
+    "tree-sitter-languages==1.10.2",
+    "tqdm",
+]
+
+[project.scripts]
+llmap = "llmap.llmap:main"
+
+[project.urls]
+"Homepage" = "https://github.com/jbellis/llmap"
+"Issues" = "https://github.com/jbellis/llmap/issues"
+
+[tool.setuptools.package-data]
+llmap = [
+    "queries/*/skeleton.scm",
+    "deepseek_v2_tokenizer/*.json"
+]
+
+include = ["llmap*"]

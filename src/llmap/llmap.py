@@ -7,10 +7,12 @@ import shutil
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+
 from tqdm import tqdm
-from ai import AI, collate
-from exceptions import AIException
-from parse import chunk
+
+from .ai import AI, collate
+from .exceptions import AIException
+from .parse import chunk
 
 
 def main():

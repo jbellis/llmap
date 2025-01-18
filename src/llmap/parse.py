@@ -2,8 +2,10 @@
 
 import sys
 from pathlib import Path
+
 from tree_sitter_languages import get_language, get_parser
-from deepseek_v2_tokenizer import tokenizer
+
+from .deepseek_v2_tokenizer import tokenizer
 
 QUERIES = {
     '.java': Path(__file__).parent / "queries" / "java" / "skeleton.scm",
