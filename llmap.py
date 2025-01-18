@@ -17,6 +17,7 @@ def main():
     parser.add_argument('question', help='Question to check relevance against')
     parser.add_argument('--sample', type=int, help='Number of random files to sample')
     parser.add_argument('--save-cache', action='store_true', help='Keep cache directory after completion')
+    parser.add_argument('--llm-concurrency', type=int, default=500, help='Maximum number of concurrent LLM requests')
     args = parser.parse_args()
 
     # Read Java files from stdin
@@ -121,7 +122,7 @@ def main():
     # Create thread pool and process files
     errors = []
     relevant_files = []
-    with ThreadPoolExecutor(max_workers=500) as executor:
+    with ThreadPoolExecutor(max_workers=args.llm_concurrency) as executor:
         # Split files by extension
         java_files = [f for f in source_files if f.endswith('.java')]
         other_files = [f for f in source_files if not f.endswith('.java')]
