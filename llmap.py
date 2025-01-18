@@ -127,53 +127,22 @@ def main():
     relevant_files = []
     with ThreadPoolExecutor(max_workers=500) as executor:
         # Phase 1: Generate initial relevance
-        gen_fn = lambda f: client.generate_relevance(f, args.question)
-        initial_results, phase1_errors = process_batch(
-            executor, java_files, gen_fn, "Generating relevance",
-            cache_path=cache_dir, phase="gen1")
+        gen_fn = lambda f: client.skeleton_relevance(f, args.question)
+        skeleton_results, phase1_errors = process_batch(
+            executor, java_files, gen_fn, "Skeleton analysis",
+            cache_path=cache_dir, phase="skeleton")
         errors.extend(phase1_errors)
-        
-        # Phase 2: Evaluate initial results
-        eval_fn = lambda r: client.evaluate_relevance(r[0], r[1], args.question, True)
-        eval_results, phase2_errors = process_batch(
-            executor, initial_results, eval_fn, "Evaluating relevance",
-            cache_path=cache_dir, phase="eval1")
-        errors.extend(phase2_errors)
-        
-        # Initialize results dictionary with initial analysis
-        full_results_dict = {file_path: analysis for file_path, analysis in initial_results}
-
-        # Sort results into relevant files and those needing full source
-        needs_full_source = []
-        for file_path, verdict in eval_results:
-            if verdict == "relevant":
+        # parse out the conclusion
+        for file_path, analysis in skeleton_results:
+            if 'LLMAP_RELEVANT' in analysis or 'LLMAP_SOURCE' in analysis:
                 relevant_files.append(file_path)
-            elif verdict == "source":
-                needs_full_source.append(file_path)
 
-        # Phase 3: Process files needing full source check
-        if needs_full_source:
-            # Generate full source relevance
-            gen_full_fn = lambda f: client.generate_relevance_full_source(f, args.question)
-            full_results_list, phase3_errors = process_batch(
-                executor, needs_full_source, gen_full_fn, "Checking full source",
-                cache_path=cache_dir, phase="gen2")
-            errors.extend(phase3_errors)
-            
-            # Update results dictionary with full source analysis
-            full_results_dict.update({file_path: analysis for file_path, analysis in full_results_list})
-            
-            # Evaluate full source results
-            eval_full_fn = lambda r: client.evaluate_relevance(r[0], r[1], args.question, False)
-            full_eval_results, phase4_errors = process_batch(
-                executor, full_results_list, eval_full_fn, "Evaluating full source",
-                cache_path=cache_dir, phase="eval2")
-            errors.extend(phase4_errors)
-            
-            # Add relevant files from full source check
-            for file_path, verdict in full_eval_results:
-                if verdict == "relevant":
-                    relevant_files.append(file_path)
+        # Phase 2: extract source code chunks from relevant files
+        gen_full_fn = lambda f: client.full_source_relevance(f, args.question)
+        full_results, phase3_errors = process_batch(
+            executor, relevant_files, gen_full_fn, "Full source analysis",
+            cache_path=cache_dir, phase="full_source")
+        errors.extend(phase3_errors)
 
     # Print any errors to stderr
     if errors:
@@ -185,8 +154,8 @@ def main():
     # Print relevant files with their analysis
     # TODO our approach results in a cluttered context (it includes the full "thinking" of the simple model)
     # it would be nice if we could strip that out without adding yet another pass
-    for file_path in relevant_files:
-        print(f"{file_path}:\n{full_results_dict[file_path]}\n")
+    for file_path, analysis in full_results:
+        print(f"{file_path}:\n{analysis}\n\n")
         
     # Clean up cache unless --save-cache was specified
     if not args.save_cache:

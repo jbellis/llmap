@@ -13,7 +13,7 @@ from parse import extract_skeleton
 import time
 from textwrap import dedent
 
-MAX_DEEPSEEK_TOKENS = 64_000  # Leave some headroom for message scaffolding while staying under 64k token limit
+MAX_DEEPSEEK_TOKENS = 50_000  # deepseek v2 tokenizer undercounts v3 tokens, this keeps it under the actual 64k limit
 MAX_GEMINI_TOKENS = 900_000   # Gemini limit is 1M but we're using the wrong tokenizer so be conservative
 
 def clean_response(text: str) -> str:
@@ -112,7 +112,7 @@ class AI:
                     continue
 
 
-    def generate_relevance(self, full_path: str, question: str) -> tuple[str, str]:
+    def skeleton_relevance(self, full_path: str, question: str) -> tuple[str, str]:
         """
         Check if a source file is relevant to the question using DeepSeek.
         Raises AIException if a recoverable error occurs.
@@ -125,31 +125,34 @@ class AI:
         # Create messages
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
+            {"role": "user", "content": skeleton},
             {"role": "user", "content": dedent(f"""
-                Given the following question,
-                
+                Evaluate the above source code skeleton for relevance to the following question:
                 ```
                 {question}
                 ```
 
-                Evaluate this source code skeleton for relevance to the question.  Give an overall summary, then give
-                the most relevant section(s) of code, if any.  If the implementation details OF THIS FILE are key to
-                determining relevance, respond with "Full Source Required" after explaining your reasoning.  It is not
-                appropriate to respond with "Full Source Required" if it is clear from the skeleton that this file is not
-                relevant.
-
-                ```
-                {skeleton}
-                ```
+                Think about whether the skeleton provides sufficient information to determine relevance:
+                - If the skeleton clearly indicates irrelevance to the question, conclude LLMAP_IRRELEVANT.
+                - If the skeleton clearly shows that the code is relevant to the question,
+                  OR if implementation details are needed to determine relevance, conclude LLMAP_RELEVANT.
             """)}
         ]
 
-        response = self.ask_deepseek(messages, full_path)
+        for _ in range(3):
+            # try up to 3 times to get a valid response
+            response = self.ask_deepseek(messages, full_path)
+            if any(choice in response.choices[0].message.content
+                   for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT', 'LLMAP_SOURCE'}):
+                break
+        else:
+            raise AIException("Failed to get a valid response from DeepSeek", full_path)
+
         answer = response.choices[0].message.content
         log_evaluation(full_path, answer)
         return full_path, answer
 
-    def generate_relevance_full_source(self, file_path: str, question: str) -> tuple[str, str]:
+    def full_source_relevance(self, file_path: str, question: str) -> tuple[str, str]:
         """
         Check the full source of a file for relevance
         Returns tuple of (file_path, evaluation_text)
@@ -170,15 +173,16 @@ class AI:
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
             {"role": "user", "content": dedent(f"""
-                Given the following question,
-                
+                ```
+                {source}
+                ```
+
+                Evaluate the above source code for relevance to the following question:
                 ```
                 {question}
                 ```
 
-                Evaluate this source code for relevance to the question.  Give an overall summary, then give
-                the most relevant section(s) of code, if any.
-
+                Give an overall summary, then give the most relevant section(s) of code, if any.
                 ```
                 {source}
                 ```
@@ -208,42 +212,3 @@ class AI:
             }, f)
         log_evaluation(file_path, answer)
         return file_path, answer
-
-    def evaluate_relevance(self, full_path: str, evaluation_text: str, question: str, source_fallback: bool) -> tuple[str, str]:
-        """
-        Convert LLM's evaluation text into a relevance decision
-        
-        Args:
-            full_path: Path to the source file
-            evaluation_text: Text from LLM evaluation
-            question: Original question being evaluated
-            source_fallback: True if we should allow the LLM to request a second evaluation with the full source
-            
-        Returns:
-            String verdict: "relevant", "irrelevant" or "source"
-            
-        Raises:
-            AIException if a recoverable error occurs
-        """
-        messages = [
-            {"role": "system", "content": "You are a helpful assistant that responds with only a single word without elaboration, not even punctuation."},
-            {"role": "user", "content": dedent(f"""
-                Based on this evaluation:
-                
-                ```
-                {evaluation_text}
-                ```
-                
-                Was the evaluated file relevant to the following problem or question?
-        
-                    {question}
-        
-                Answer with exactly one of these words:
-                - "Relevant" if the file was definitely relevant
-                - "Irrelevant" if the file was definitely not relevant
-                {'- "Source" if the evaluation states or implies that the implementation details of the full source code are needed' if source_fallback else ''}
-            """)}
-        ]
-
-        response = self.ask_deepseek(messages, full_path)
-        return full_path, clean_response(response.choices[0].message.content)
