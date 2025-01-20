@@ -8,7 +8,7 @@ from tree_sitter_languages import get_language, get_parser
 from .deepseek_v3_tokenizer import tokenizer
 
 
-MAX_DEEPSEEK_TOKENS = 64000 - 8000 # output 8k counts towards 64k limit
+MAX_DEEPSEEK_TOKENS = 62000 - 8000 # output 8k counts towards 64k limit. Headroom for scaffolding.
 
 QUERIES = {
     '.java': Path(__file__).parent / "queries" / "java" / "skeleton.scm",
@@ -257,7 +257,7 @@ if __name__ == '__main__':
             print("--------------------------------------")
             print(extract_skeleton(fname))
         elif cmd == 'chunk':
-            chs = chunk(fname, max_tokens=1000)  # smaller max for demo
+            chs = chunk(fname)  # smaller max for demo
             print("Chunks:")
             print("--------------------------------------")
             for i, ch in enumerate(chs, 1):

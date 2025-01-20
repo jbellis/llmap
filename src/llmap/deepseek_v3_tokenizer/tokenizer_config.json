@@ -19,7 +19,7 @@
     "single_word": false
   },
   "legacy": true,
-  "model_max_length": 16384,
+  "model_max_length": 65536,
   "pad_token": {
     "__type": "AddedToken",
     "content": "<｜end▁of▁sentence｜>",
