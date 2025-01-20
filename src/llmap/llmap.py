@@ -24,7 +24,7 @@ def main():
     parser.add_argument('question', help='Question to check relevance against')
     parser.add_argument('--sample', type=int, help='Number of random files to sample from the input set')
     parser.add_argument('--save-cache', action='store_true', help='Keep cache directory after completion')
-    parser.add_argument('--llm-concurrency', type=int, default=500, help='Maximum number of concurrent LLM requests')
+    parser.add_argument('--llm-concurrency', type=int, default=200, help='Maximum number of concurrent LLM requests')
     parser.add_argument('--no-refine', action='store_false', dest='refine', help='Skip refinement and combination of analyses')
     args = parser.parse_args()
 
@@ -38,7 +38,7 @@ def main():
         source_files.append(file_path)
 
     if not source_files:
-        print("Error: No valid Java files provided", file=sys.stderr)
+        print("Error: No valid source files provided", file=sys.stderr)
         return 1
 
     # Sample files if requested
