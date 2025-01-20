@@ -58,6 +58,16 @@ or attach it to a conversation with your favorite AI chat tool.
 
 Errors are logged to stderr.
 
+## Didn't find what you were looking for?
+
+First, try passing `--no-refine`.  While the refine step is usually helpful in filtering out the noise
+(thus taking up less of your context window), sometimes it's too aggressive.
+
+Second, try rephrasing your question with more clues for the LLM to latch onto.  Like any information
+retrieval tool, sometimes the way you ask can make a big difference.
+- Worse: "How can I add a WITH clause to the CQL SELECT statement?"
+- Better: "How can I add a WITH clause to the CQL SELECT statement? It will be used for adding query planning hints like which index to use."
+
 ## Options
 
 ```
