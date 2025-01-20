@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llmap-ai"
-version = "0.9"
+version = "0.9.1"
 authors = [
     { name = "Jonathan Ellis", email = "jbellis@gmail.com" },
 ]
@@ -34,7 +34,7 @@ llmap = "llmap.llmap:main"
 [tool.setuptools.package-data]
 llmap = [
     "queries/*/skeleton.scm",
-    "deepseek_v2_tokenizer/*.json"
+    "deepseek_v3_tokenizer/*.json"
 ]
 
 include = ["llmap*"]
