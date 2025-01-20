@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llmap-ai"
-version = "0.2"
+version = "0.9"
 authors = [
     { name = "Jonathan Ellis", email = "jbellis@gmail.com" },
 ]
