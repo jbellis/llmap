@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from tqdm import tqdm
 
-from .ai import AI, collate
+from .ai import AI, collate, SourceAnalysis
 from .exceptions import AIException
 from .parse import chunk
 

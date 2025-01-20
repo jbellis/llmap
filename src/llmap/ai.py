@@ -1,12 +1,16 @@
 import hashlib
 import json
 import os
-import sys
-import threading
 import time
 from textwrap import dedent
+from typing import NamedTuple
 
 from openai import OpenAI, BadRequestError, APITimeoutError, APIConnectionError
+
+
+class SourceAnalysis(NamedTuple):
+    file_path: str
+    analysis: str
 
 from .deepseek_v3_tokenizer import tokenizer
 from .exceptions import AIException
@@ -14,42 +18,42 @@ from .parse import extract_skeleton, MAX_DEEPSEEK_TOKENS
 from .cache import Cache
 
 
-def collate(analyses: list[tuple[str, str]]) -> tuple[list[list[tuple[str, str]]], list[tuple[str, str]]]:
+def collate(analyses: list[SourceAnalysis]) -> tuple[list[list[SourceAnalysis]], list[SourceAnalysis]]:
     """
     Group analyses into batches that fit under token limit, and separate out large files.
     
     Args:
-        analyses: List of (file_path, analysis_text) tuples
+        analyses: List of SourceAnalysis objects
     
     Returns:
         Tuple of (grouped_analyses, large_files) where:
-        - grouped_analyses is a list of lists of (file_path, analysis) tuples, each group under MAX_DEEPSEEK_TOKENS
-        - large_files is a list of (file_path, analysis) tuples that individually exceed MAX_DEEPSEEK_TOKENS
+        - grouped_analyses is a list of lists of SourceAnalysis objects, each group under MAX_DEEPSEEK_TOKENS
+        - large_files is a list of SourceAnalysis objects that individually exceed MAX_DEEPSEEK_TOKENS
     """
     large_files = []
     small_files = []
     
     # Separate large and small files
-    for file_path, analysis in analyses:
-        tokens = len(tokenizer.encode(analysis))
+    for analysis in analyses:
+        tokens = len(tokenizer.encode(analysis.analysis))
         if tokens > MAX_DEEPSEEK_TOKENS:
-            large_files.append((file_path, analysis))
+            large_files.append(analysis)
         else:
-            small_files.append((file_path, analysis, tokens))
+            small_files.append((analysis, tokens))
     
     # Group small files
     groups = []
     current_group = []
     current_tokens = 0
     
-    for file_path, analysis, tokens in small_files:
+    for analysis, tokens in small_files:
         if current_tokens + tokens > MAX_DEEPSEEK_TOKENS:
             if current_group:  # Only append if group has items
                 groups.append(current_group)
-            current_group = [(file_path, analysis)]
+            current_group = [analysis]
             current_tokens = tokens
         else:
-            current_group.append((file_path, analysis))
+            current_group.append(analysis)
             current_tokens += tokens
     
     if current_group:  # Add final group if it exists
@@ -141,7 +145,7 @@ class AI:
         else:
             raise AIException("Repeated timeouts evaluating source code", file_path)
 
-    def skeleton_relevance(self, full_path: str, question: str) -> tuple[str, str]:
+    def skeleton_relevance(self, full_path: str, question: str) -> SourceAnalysis:
         """
         Check if a source file is relevant to the question using DeepSeek.
         Raises AIException if a recoverable error occurs.
@@ -189,16 +193,16 @@ class AI:
                    for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT', 'LLMAP_SOURCE'}):
             raise AIException("Failed to get a valid response from DeepSeek", full_path)
 
-        return full_path, content
+        return SourceAnalysis(full_path, content)
 
-    def full_source_relevance(self, source: str, question: str, file_path: str = None) -> tuple[str, str]:
+    def full_source_relevance(self, source: str, question: str, file_path: str = None) -> SourceAnalysis:
         """
         Check source code for relevance
         Args:
             source: The source code to analyze
             question: The question to check relevance against
             file_path: Optional file path for error reporting
-        Returns tuple of (file_path, evaluation_text)
+        Returns SourceAnalysis containing file path and evaluation text
         Raises AIException if a recoverable error occurs.
         """
         messages = [
@@ -218,9 +222,9 @@ class AI:
         ]
 
         response = self.ask_deepseek(messages, "deepseek-chat", file_path)
-        return file_path, response.choices[0].message.content
+        return SourceAnalysis(file_path, response.choices[0].message.content)
 
-    def sift_context(self, file_group: list[tuple[str, str]], question: str) -> str:
+    def sift_context(self, file_group: list[SourceAnalysis], question: str) -> str:
         """
         Process groups of file analyses to extract only the relevant context.
 
@@ -231,7 +235,7 @@ class AI:
         Returns:
             List of processed contexts, one per group
         """
-        combined = "\n\n".join(f"File: {path}\n{analysis}" for path, analysis in file_group)
+        combined = "\n\n".join(f"File: {analysis.file_path}\n{analysis.analysis}" for analysis in file_group)
 
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to collate source code."},
