@@ -95,10 +95,9 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
         for (file_path, analysis) in chunk_analyses:
             analyses_by_file[file_path].append(analysis)
 
-        chunk_results = [
-            (file_path, "\n\n".join(analyses))
-            for file_path, analyses in analyses_by_file.items()
-        ]
+        # sorted so the caching is deterministic
+        chunk_results = sorted(SourceAnalysis(file_path, "\n\n".join(sorted(analyses)))
+                               for file_path, analyses in analyses_by_file.items())
 
         # Collate and process results
         groups, large_files = collate(chunk_results)
