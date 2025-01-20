@@ -1,8 +1,6 @@
-import datetime
 import hashlib
 import json
 import os
-import os.path
 import sys
 import threading
 import time
@@ -13,6 +11,7 @@ from openai import OpenAI, BadRequestError, APITimeoutError, APIConnectionError
 from .deepseek_v3_tokenizer import tokenizer
 from .exceptions import AIException
 from .parse import extract_skeleton, MAX_DEEPSEEK_TOKENS
+from .cache import Cache
 
 
 def collate(analyses: list[tuple[str, str]]) -> tuple[list[list[tuple[str, str]]], list[tuple[str, str]]]:
@@ -84,8 +83,14 @@ def maybe_truncate(text: str, max_tokens: int) -> str:
 
 
 class AI:
-    def __init__(self, cache_dir):
-        self.cache_dir = cache_dir
+    def __init__(self, cache_dir=None):  # cache_dir kept for backwards compatibility
+        # Set up caching based on LLMAP_CACHE env var
+        cache_mode = os.getenv('LLMAP_CACHE', 'read/write').lower()
+        if cache_mode not in ['none', 'read', 'write', 'read/write']:
+            raise ValueError("LLMAP_CACHE must be one of: none, read, write, read/write")
+        self.cache_mode = cache_mode
+        self.cache = None if cache_mode == 'none' else Cache()
+        
         # deepseek client
         deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
         if not deepseek_api_key:
@@ -96,12 +101,11 @@ class AI:
         """Helper method to make requests to DeepSeek API with error handling, retries and caching"""
         # Create cache key from messages and model
         cache_key = hashlib.sha256(json.dumps([messages, model]).encode()).hexdigest()
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
-
-        # Try to load from cache
-        if os.path.exists(cache_file):
-            with open(cache_file, 'r') as f:
-                cached_data = json.load(f)
+        
+        # Try to load from cache if reading enabled
+        if self.cache and self.cache_mode in ['read', 'read/write']:
+            cached_data = self.cache.get(cache_key)
+            if cached_data:
                 return type('Response', (), {
                     'choices': [type('Choice', (), {
                         'message': type('Message', (), {
@@ -110,7 +114,7 @@ class AI:
                     })]
                 })
 
-        # Call API if not in cache
+        # Call API if not in cache or cache read disabled
         for attempt in range(5):
             try:
                 response = self.deepseek_client.chat.completions.create(
@@ -120,14 +124,12 @@ class AI:
                     max_tokens=8000,
                 )
                 
-                # Save successful response to cache
-                os.makedirs(self.cache_dir, exist_ok=True)
-                with open(cache_file, 'w') as f:
-                    json.dump({
-                        'answer': response.choices[0].message.content,
-                        'timestamp': datetime.datetime.now().isoformat()
-                    }, f)
-                    
+                # Save successful response if cache writing enabled
+                if self.cache and self.cache_mode in ['write', 'read/write']:
+                    self.cache.set(cache_key, {
+                        'answer': response.choices[0].message.content
+                    })
+                
                 return response
             except BadRequestError as e:
                 # log the request to /tmp/deepseek_error.log

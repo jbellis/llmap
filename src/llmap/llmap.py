@@ -1,13 +1,9 @@
 import argparse
-import hashlib
-import json
 import os
 import random
-import shutil
 import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 from tqdm import tqdm
 
@@ -19,11 +15,11 @@ from .parse import chunk
 import warnings
 warnings.filterwarnings('ignore', category=FutureWarning, module='tree_sitter')
 
+
 def main():
     parser = argparse.ArgumentParser(description='Analyze source files for relevance to a question')
     parser.add_argument('question', help='Question to check relevance against')
     parser.add_argument('--sample', type=int, help='Number of random files to sample from the input set')
-    parser.add_argument('--save-cache', action='store_true', help='Keep cache directory after completion')
     parser.add_argument('--llm-concurrency', type=int, default=200, help='Maximum number of concurrent LLM requests')
     parser.add_argument('--no-refine', action='store_false', dest='refine', help='Skip refinement and combination of analyses')
     args = parser.parse_args()
@@ -45,62 +41,8 @@ def main():
     if args.sample and args.sample < len(source_files):
         source_files = random.sample(source_files, args.sample)
 
-    # Setup cache directory
-    cache_key = f"{args.question}_{len(source_files)}_{args.sample or 'all'}"
-    # Hash it to get a safe directory name
-    cache_hash = hashlib.md5(cache_key.encode()).hexdigest()
-    cache_dir = Path(".llmap_cache") / cache_hash
-    if cache_dir.exists():
-        print(f"Using cache directory: {cache_dir}", file=sys.stderr)
-    else:
-        print(f"Creating cache directory: {cache_dir}")
-
     # Initialize client
-    client = AI(cache_dir)
-
-    def load_cached_results(cache_path, phase):
-        """Load cached results and errors for a phase"""
-        results_file = cache_path / f"{phase}_results.jsonl"
-        errors_file = cache_path / f"{phase}_errors.jsonl"
-    
-        results = []
-        errors = []
-    
-        if results_file.exists():
-            with open(results_file) as f:
-                for line in f:
-                    results.append(tuple(json.loads(line)))
-                
-        if errors_file.exists():
-            with open(errors_file) as f:
-                for line in f:
-                    error_data = json.loads(line)
-                    errors.append(AIException(
-                        message=error_data['message'],
-                        filename=error_data['filename'],
-                        original_exception=None
-                    ))
-                
-        return results, errors
-
-    def save_results(cache_path, phase, results, errors):
-        """Save results and errors for a phase"""
-        results_file = cache_path / f"{phase}_results.jsonl"
-        errors_file = cache_path / f"{phase}_errors.jsonl"
-    
-        with open(results_file, 'w') as f:
-            for result in results:
-                json.dump(list(result), f)
-                f.write('\n')
-            
-        with open(errors_file, 'w') as f:
-            for error in errors:
-                error_dict = {
-                    'message': str(error),
-                    'filename': error.filename
-                }
-                json.dump(error_dict, f)
-                f.write('\n')
+    client = AI()
 
     def process_batch(executor, files, process_fn, desc):
         """Process a batch of files and return results, tracking errors"""
@@ -196,9 +138,6 @@ def main():
     for file_path, analysis in large_files:
         print(f"{file_path}:\n{analysis}\n\n")
         
-    # Clean up cache unless --save-cache was specified
-    if not args.save_cache:
-        shutil.rmtree(cache_dir)
 
 if __name__ == "__main__":
     main()
