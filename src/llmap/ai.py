@@ -250,4 +250,19 @@ class AI:
         ]
 
         response = self.ask_deepseek(messages, "deepseek-reasoner")
-        return response.choices[0].message.content
+        content1 = response.choices[0].message.content
+        messages += [
+            {"role": "assistant", "content": content1},
+            {"role": "user", "content": dedent(f"""
+                Take one more look and make sure you didn't miss anything important for answering
+                the question:
+                ```
+                {question}
+                ```
+            """)}
+        ]
+        response = self.ask_deepseek(messages, "deepseek-reasoner")
+        content2 = response.choices[0].message.content
+
+        return content1 + '\n\n' + content2
+
