@@ -14,6 +14,9 @@ from .ai import AI, collate
 from .exceptions import AIException
 from .parse import chunk
 
+# we're using an old tree-sitter API
+import warnings
+warnings.filterwarnings('ignore', category=FutureWarning, module='tree_sitter')
 
 def main():
     parser = argparse.ArgumentParser(description='Analyze source files for relevance to a question')
