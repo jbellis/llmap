@@ -46,10 +46,10 @@ export DEEPSEEK_API_KEY=YYY
 find src/ -name "*.java" | llmap "Where is the database connection configured?"
 ```
 
-LLMs APIs are not super reliable, so LLMap caches LLM responses in `.llmap_cache` by question and by processing
-stage, so that you don't have to start over from scratch if you get rate limited or run into another hiccup.
-
-The cache is automatically cleaned out when execution completes successfully.
+LLMs APIs are not super reliable, so LLMap caches LLM responses in `~/.cache/llmap`
+so that you don't have to start over from scratch if you get rate limited or run into another hiccup.
+(This also means that if you want to check the raw, unrefined output [see below], you won't have to
+reprocess the search.)
 
 ## Output
 
@@ -70,10 +70,15 @@ retrieval tool, sometimes the way you ask can make a big difference.
 
 ## Options
 
+Commandline parameters:
 ```
   --sample SAMPLE       Number of random files to sample
-  --save-cache          Keep cache directory after completion
   --llm-concurrency LLM_CONCURRENCY
                         Maximum number of concurrent LLM requests
   --no-refine           Skip refinement and combination of analyses
+```
+
+Environment variables:
+```
+  LLMAP_CACHE           none|read|write|read/write
 ```
