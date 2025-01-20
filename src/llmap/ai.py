@@ -167,17 +167,27 @@ class AI:
             """)}
         ]
 
-        for _ in range(3):
-            # try up to 3 times to get a valid response
-            response = self.ask_deepseek(messages, "deepseek-chat", full_path)
-            if any(choice in response.choices[0].message.content
+        response = self.ask_deepseek(messages, "deepseek-chat", full_path)
+        content = response.choices[0].message.content
+        # if the response doesn't contain any of the expected choices, try again
+        if not any(choice in content
                    for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT', 'LLMAP_SOURCE'}):
-                break
-        else:
+            messages += [
+                {"role": "assistant", "content": content},
+                {"role": "user", "content": dedent(f"""
+                    - If the skeleton clearly indicates irrelevance to the question, conclude LLMAP_IRRELEVANT.
+                    - If the skeleton clearly shows that the code is relevant to the question,
+                      OR if implementation details are needed to determine relevance, conclude LLMAP_RELEVANT.
+                """)}
+            ]
+            response = self.ask_deepseek(messages, "deepseek-chat", full_path)
+            content = response.choices[0].message.content
+        # if it still doesn't contain any of the expected choices, raise an exception
+        if not any(choice in content
+                   for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT', 'LLMAP_SOURCE'}):
             raise AIException("Failed to get a valid response from DeepSeek", full_path)
 
-        answer = response.choices[0].message.content
-        return full_path, answer
+        return full_path, content
 
     def full_source_relevance(self, source: str, question: str, file_path: str = None) -> tuple[str, str]:
         """
