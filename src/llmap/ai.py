@@ -129,8 +129,10 @@ class AI:
                     }, f)
                     
                 return response
-                
             except BadRequestError as e:
+                # log the request to /tmp/deepseek_error.log
+                with open('/tmp/deepseek_error.log', 'a') as f:
+                    print(f"{messages}\n\n->\n{e}", file=f)
                 raise AIException("Error evaluating source code", file_path, e)
             except (APITimeoutError, APIConnectionError) as e:
                 time.sleep(1)  # Wait 1 second before retrying
@@ -200,9 +202,6 @@ class AI:
                 Give an overall summary, then give the most relevant section(s) of code, if any.
                 Prefer to give relevant code in units of functions, classes, or methods, rather
                 than isolated lines.
-                ```
-                {source}
-                ```
             """)}
         ]
 
