@@ -204,7 +204,8 @@ def main():
             errors.extend(phase4_errors)
         else:
             # If no refinement, just flatten the groups into individual results
-            processed_contexts = [analysis for group in groups for _, analysis in group]
+            processed_contexts = [f'File{file_path}\n{analysis}\n\n'
+                                  for group in groups for file_path, analysis in group]
 
     # Print any errors to stderr
     if errors:
