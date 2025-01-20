@@ -5,9 +5,10 @@ import os
 import os.path
 import sys
 import threading
+import time
 from textwrap import dedent
 
-from openai import OpenAI, BadRequestError
+from openai import OpenAI, BadRequestError, APITimeoutError, APIConnectionError
 
 from .deepseek_v2_tokenizer import tokenizer
 from .exceptions import AIException
@@ -93,20 +94,26 @@ class AI:
             raise Exception("DEEPSEEK_API_KEY environment variable not set")
         self.deepseek_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
 
-    def ask_deepseek(self, messages, file_path=None):
-        """Helper method to make requests to DeepSeek API with error handling"""
-        try:
-            response = self.deepseek_client.chat.completions.create(
-                model="deepseek-chat",
-                messages=messages,
-                stream=False
-            )
-            if os.getenv('LLMAP_VERBOSE'):
-                print(f"DeepSeek response for {file_path}:", file=sys.stderr)
-                print("\t" + response.choices[0].message.content, file=sys.stderr)
-            return response
-        except BadRequestError as e:
-            raise AIException("Error evaluating source code", file_path, e)
+    def ask_deepseek(self, messages, model, file_path=None):
+        """Helper method to make requests to DeepSeek API with error handling and retries"""
+        for attempt in range(5):
+            try:
+                response = self.deepseek_client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    stream=False,
+                    max_tokens=8000,
+                )
+                if os.getenv('LLMAP_VERBOSE'):
+                    print(f"DeepSeek response for {file_path}:", file=sys.stderr)
+                    print("\t" + response.choices[0].message.content, file=sys.stderr)
+                return response
+            except BadRequestError as e:
+                raise AIException("Error evaluating source code", file_path, e)
+            except (APITimeoutError, APIConnectionError) as e:
+                time.sleep(1)  # Wait 1 second before retrying
+        else:
+            raise AIException("Repeated timeouts evaluating source code", file_path)
 
     def skeleton_relevance(self, full_path: str, question: str) -> tuple[str, str]:
         """
@@ -122,6 +129,7 @@ class AI:
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
             {"role": "user", "content": skeleton},
+            {"role": "assistant", "content": "Thank you for providing your source code skeleton for analysis."},
             {"role": "user", "content": dedent(f"""
                 Evaluate the above source code skeleton for relevance to the following question:
                 ```
@@ -137,7 +145,7 @@ class AI:
 
         for _ in range(3):
             # try up to 3 times to get a valid response
-            response = self.ask_deepseek(messages, full_path)
+            response = self.ask_deepseek(messages, "deepseek-chat", full_path)
             if any(choice in response.choices[0].message.content
                    for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT', 'LLMAP_SOURCE'}):
                 break
@@ -160,6 +168,7 @@ class AI:
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
             {"role": "user", "content": source},
+            {"role": "assistant", "content": "Thank you for providing your source code for analysis."},
             {"role": "user", "content": dedent(f"""
                 Evaluate the above source code for relevance to the following question:
                 ```
@@ -184,7 +193,7 @@ class AI:
                 return file_path, cached_data['answer']
 
         # Call LLM if not in cache
-        response = self.ask_deepseek(messages, file_path)
+        response = self.ask_deepseek(messages, "deepseek-chat", file_path)
         
         # Save successful response to cache
         answer = response.choices[0].message.content
@@ -212,6 +221,7 @@ class AI:
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to collate source code."},
             {"role": "user", "content": combined},
+            {"role": "assistant", "content": "Thank you for providing your source code fragments."},
             {"role": "user", "content": dedent(f"""
                 The above text contains analysis of multiple source files related to this question:
                 ```
@@ -220,10 +230,11 @@ class AI:
 
                 Extract only the most relevant context and code sections that help answer the question.
                 Remove any irrelevant files completely, but preserve file paths for the relevant code fragments.
+                Include the relevant code fragments as-is; do not truncate, summarize, or modify them.
                 
                 Do not include additional commentary or analysis of the provided text.
             """)}
         ]
 
-        response = self.ask_deepseek(messages)
+        response = self.ask_deepseek(messages, "deepseek-reasoner")
         return response.choices[0].message.content

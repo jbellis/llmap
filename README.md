@@ -5,7 +5,7 @@ Tools like Aider and Cursor are great at editing code for you once you give them
 especially in large codebases.
 
 LLMap is a CLI code search tool designed to solve that problem by asking  
-[DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3) to evaluate the relevance of each source file
+[DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3) and DeepSeek-R1 to evaluate the relevance of each source file
 in your codebase to your problem.
 
 Until recently, this would be prohibitively expensive and slow.  But DeepSeek-V3 is cheap, smart, fast,
@@ -17,9 +17,9 @@ searches against the same files will be [faster and less expensive](https://api-
 
 Finally, LLMap optimizes the problem by using a multi-stage analysis to avoid spending more time
 than necessary analyzing obviously irrelevant files.  LLMap performs 3 stages of analysis:
- 1. Coarse analysis using code skeletons
- 2. Full source analysis of potentially relevant files from (1)
- 3. Refine the output of (2) to only the most relevant snippets
+ 1. Coarse analysis using code skeletons [DeepSeek-V3]
+ 2. Full source analysis of potentially relevant files from (1) [DeepSeek-V3]
+ 3. Refine the output of (2) to only the most relevant snippets [DeepSeek-R1]
 
 ## Limitations
 
@@ -33,7 +33,7 @@ is straightforward; contributions are welcome.
 ## Installation
 
 ```bash
-pip install llmap
+pip install llmap-ai
 ```
 
 Get a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com).
