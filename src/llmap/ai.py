@@ -176,6 +176,8 @@ class AI:
                 ```
 
                 Give an overall summary, then give the most relevant section(s) of code, if any.
+                Prefer to give relevant code in units of functions, classes, or methods, rather
+                than isolated lines.
                 ```
                 {source}
                 ```
