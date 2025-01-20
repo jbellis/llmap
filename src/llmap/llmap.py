@@ -101,14 +101,8 @@ def main():
                 json.dump(error_dict, f)
                 f.write('\n')
 
-    def process_batch(executor, files, process_fn, desc, cache_path=None, phase=None):
+    def process_batch(executor, files, process_fn, desc):
         """Process a batch of files and return results, tracking errors"""
-        # Check cache first if path provided
-        if cache_path and phase:
-            if (cache_path / f"{phase}_results.jsonl").exists():
-                print(f"Using cached results for {desc}", file=sys.stderr)
-                return load_cached_results(cache_path, phase)
-        
         futures = [executor.submit(process_fn, f) for f in files]
         results = []
         errors = []
@@ -119,11 +113,6 @@ def main():
             except AIException as e:
                 errors.append(e)
                 
-        # Save results if cache path provided
-        if cache_path and phase:
-            cache_path.mkdir(parents=True, exist_ok=True)
-            save_results(cache_path, phase, results, errors)
-            
         return results, errors
 
     # Create thread pool and process files
@@ -138,8 +127,7 @@ def main():
         if parseable_files:
             gen_fn = lambda f: client.skeleton_relevance(f, args.question)
             skeleton_results, phase1_errors = process_batch(
-                executor, parseable_files, gen_fn, "Skeleton analysis",
-                cache_path=cache_dir, phase="skeleton")
+                executor, parseable_files, gen_fn, "Skeleton analysis")
             errors.extend(phase1_errors)
             # parse out the conclusion
             for file_path, analysis in skeleton_results:
@@ -150,47 +138,37 @@ def main():
         relevant_files.extend(other_files)
 
         # Phase 2: extract and analyze source code chunks from relevant files
-        chunk_results = []
-        phase2_errors = []
-        
-        # Get all chunks in parallel
-        file_chunks = {}
-        chunk_futures = []
-        for file_path in relevant_files:
-            future = executor.submit(chunk, file_path)
-            chunk_futures.append((file_path, future))
-            
-        for file_path, future in tqdm(chunk_futures, desc="Parsing full source"):
-            chunks = future.result()
+        # First get all chunks
+        chunk_fn = lambda f: (f, chunk(f))
+        file_chunks, phase2a_errors = process_batch(
+            executor, relevant_files, chunk_fn, "Parsing full source")
+        errors.extend(phase2a_errors)
+
+        # Flatten chunks into (file_path, chunk_text) pairs for analysis
+        chunk_pairs = []
+        for file_path, chunks in file_chunks:
             if chunks:
-                file_chunks[file_path] = chunks
+                for chunk_text in chunks:
+                    chunk_pairs.append((file_path, chunk_text))
 
-        # Analyze all chunks in parallel
-        chunk_analyses = {}
-        chunk_futures = []
-        for file_path, chunks in file_chunks.items():
-            for chunk_text in chunks:
-                future = executor.submit(client.full_source_relevance, chunk_text, args.question, file_path)
-                chunk_futures.append((file_path, future))
+        # Analyze all chunks
+        analyze_fn = lambda pair: client.full_source_relevance(pair[1], args.question, pair[0])
+        chunk_analyses, phase2b_errors = process_batch(
+            executor, chunk_pairs, analyze_fn, "Analyzing full source")
+        errors.extend(phase2b_errors)
 
-        # Collect results
-        for file_path, future in tqdm(chunk_futures, desc="Analyzing full source"):
-            try:
-                result = future.result()
-                if result:
-                    if file_path not in chunk_analyses:
-                        chunk_analyses[file_path] = []
-                    chunk_analyses[file_path].append(result[1])
-            except Exception as e:
-                print(f"Error analyzing chunk from {file_path}: {e}", file=sys.stderr)
-                phase2_errors.append(AIException(str(e), file_path))
+        # Group analyses by file and combine
+        analyses_by_file = {}
+        for (file_path, _), (_, analysis) in chunk_analyses:
+            if analysis:
+                if file_path not in analyses_by_file:
+                    analyses_by_file[file_path] = []
+                analyses_by_file[file_path].append(analysis)
 
-        # Combine analyses per file
-        for file_path, analyses in chunk_analyses.items():
-            combined = "\n\n".join(analyses)
-            chunk_results.append((file_path, combined))
-                
-        errors.extend(phase2_errors)
+        chunk_results = [
+            (file_path, "\n\n".join(analyses))
+            for file_path, analyses in analyses_by_file.items()
+        ]
 
         # Collate and process results
         groups, large_files = collate(chunk_results)
@@ -199,8 +177,7 @@ def main():
         if args.refine:
             sift_fn = lambda g: client.sift_context(g, args.question)
             processed_contexts, phase4_errors = process_batch(
-                executor, groups, sift_fn, "Refining analysis",
-                cache_path=cache_dir, phase="sift_context")
+                executor, groups, sift_fn, "Refining analysis")
             errors.extend(phase4_errors)
         else:
             # If no refinement, just flatten the groups into individual results

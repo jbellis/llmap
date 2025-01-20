@@ -95,7 +95,24 @@ class AI:
         self.deepseek_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
 
     def ask_deepseek(self, messages, model, file_path=None):
-        """Helper method to make requests to DeepSeek API with error handling and retries"""
+        """Helper method to make requests to DeepSeek API with error handling, retries and caching"""
+        # Create cache key from messages and model
+        cache_key = hashlib.sha256(json.dumps([messages, model]).encode()).hexdigest()
+        cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
+
+        # Try to load from cache
+        if os.path.exists(cache_file):
+            with open(cache_file, 'r') as f:
+                cached_data = json.load(f)
+                return type('Response', (), {
+                    'choices': [type('Choice', (), {
+                        'message': type('Message', (), {
+                            'content': cached_data['answer']
+                        })
+                    })]
+                })
+
+        # Call API if not in cache
         for attempt in range(5):
             try:
                 response = self.deepseek_client.chat.completions.create(
@@ -104,10 +121,17 @@ class AI:
                     stream=False,
                     max_tokens=8000,
                 )
-                if os.getenv('LLMAP_VERBOSE'):
-                    print(f"DeepSeek response for {file_path}:", file=sys.stderr)
-                    print("\t" + response.choices[0].message.content, file=sys.stderr)
+                
+                # Save successful response to cache
+                os.makedirs(self.cache_dir, exist_ok=True)
+                with open(cache_file, 'w') as f:
+                    json.dump({
+                        'answer': response.choices[0].message.content,
+                        'timestamp': datetime.datetime.now().isoformat()
+                    }, f)
+                    
                 return response
+                
             except BadRequestError as e:
                 raise AIException("Error evaluating source code", file_path, e)
             except (APITimeoutError, APIConnectionError) as e:
@@ -184,28 +208,8 @@ class AI:
             """)}
         ]
 
-        # Create cache key from messages
-        cache_key = hashlib.sha256(json.dumps(messages).encode()).hexdigest()
-        cache_file = os.path.join(self.cache_dir, f"{cache_key}.json")
-
-        # Try to load from cache
-        if os.path.exists(cache_file):
-            with open(cache_file, 'r') as f:
-                cached_data = json.load(f)
-                return file_path, cached_data['answer']
-
-        # Call LLM if not in cache
         response = self.ask_deepseek(messages, "deepseek-chat", file_path)
-        
-        # Save successful response to cache
-        answer = response.choices[0].message.content
-        os.makedirs(self.cache_dir, exist_ok=True)
-        with open(cache_file, 'w') as f:
-            json.dump({
-                'answer': answer,
-                'timestamp': datetime.datetime.now().isoformat()
-            }, f)
-        return file_path, answer
+        return file_path, response.choices[0].message.content
 
     def sift_context(self, file_group: list[tuple[str, str]], question: str) -> str:
         """
