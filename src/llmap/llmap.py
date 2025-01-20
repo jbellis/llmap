@@ -16,31 +16,21 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning, module='tree_sitter')
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Analyze source files for relevance to a question')
-    parser.add_argument('question', help='Question to check relevance against')
-    parser.add_argument('--sample', type=int, help='Number of random files to sample from the input set')
-    parser.add_argument('--llm-concurrency', type=int, default=200, help='Maximum number of concurrent LLM requests')
-    parser.add_argument('--no-refine', action='store_false', dest='refine', help='Skip refinement and combination of analyses')
-    args = parser.parse_args()
-
-    # Read Java files from stdin
-    source_files = []
-    for line in sys.stdin:
-        file_path = line.strip()
-        if not os.path.isfile(file_path):
-            print(f"Warning: File does not exist: {file_path}", file=sys.stderr)
-            continue
-        source_files.append(file_path)
-
-    if not source_files:
-        print("Error: No valid source files provided", file=sys.stderr)
-        return 1
-
-    # Sample files if requested
-    if args.sample and args.sample < len(source_files):
-        source_files = random.sample(source_files, args.sample)
-
+def search(question: str, source_files: list[str], llm_concurrency: int = 200, refine: bool = True) -> tuple[list[AIException], str]:
+    """
+    Search source files for relevance to a question.
+    
+    Args:
+        question: The question to analyze relevance against
+        source_files: List of source file paths to analyze
+        llm_concurrency: Maximum number of concurrent LLM requests
+        refine: Whether to refine and combine analyses
+        
+    Returns:
+        tuple[list[AIException], str]: A tuple containing:
+            - List of non-fatal AIException errors encountered during processing
+            - Formatted string containing the analysis results
+    """
     # Initialize client
     client = AI()
 
@@ -61,14 +51,14 @@ def main():
     # Create thread pool and process files
     errors = []
     relevant_files = []
-    with ThreadPoolExecutor(max_workers=args.llm_concurrency) as executor:
+    with ThreadPoolExecutor(max_workers=llm_concurrency) as executor:
         # Split files by whether we can parse a skeleton
         parseable_files = {f for f in source_files if f.endswith('.java') or f.endswith('.py')}
         other_files = [f for f in source_files if not f in parseable_files]
 
-        # Phase 1: Generate initial relevance against skeletons for Java files
+        # Phase 1: Generate initial relevance against skeletons for parseable files
         if parseable_files:
-            gen_fn = lambda f: client.skeleton_relevance(f, args.question)
+            gen_fn = lambda f: client.skeleton_relevance(f, question)
             skeleton_results, phase1_errors = process_batch(
                 executor, parseable_files, gen_fn, "Skeleton analysis")
             errors.extend(phase1_errors)
@@ -77,7 +67,7 @@ def main():
                 if 'LLMAP_RELEVANT' in analysis or 'LLMAP_SOURCE' in analysis:
                     relevant_files.append(file_path)
 
-        # Add non-Java files directly to relevant_files for full source analysis
+        # Add non-parseable files directly to relevant_files for full source analysis
         relevant_files.extend(other_files)
 
         # Phase 2: extract and analyze source code chunks from relevant files
@@ -95,7 +85,7 @@ def main():
                     chunk_pairs.append((file_path, chunk_text))
 
         # Analyze all chunks
-        analyze_fn = lambda pair: client.full_source_relevance(pair[1], args.question, pair[0])
+        analyze_fn = lambda pair: client.full_source_relevance(pair[1], question, pair[0])
         chunk_analyses, phase2b_errors = process_batch(
             executor, chunk_pairs, analyze_fn, "Analyzing full source")
         errors.extend(phase2b_errors)
@@ -114,8 +104,8 @@ def main():
         groups, large_files = collate(chunk_results)
 
         # Refine groups in parallel
-        if args.refine:
-            sift_fn = lambda g: client.sift_context(g, args.question)
+        if refine:
+            sift_fn = lambda g: client.sift_context(g, question)
             processed_contexts, phase4_errors = process_batch(
                 executor, groups, sift_fn, "Refining analysis")
             errors.extend(phase4_errors)
@@ -124,19 +114,49 @@ def main():
             processed_contexts = [f'File{file_path}\n{analysis}\n\n'
                                   for group in groups for file_path, analysis in group]
 
-    # Print any errors to stderr
-    if errors:
-        print("\nErrors encountered:", file=sys.stderr)
-        for error in errors:
-            print(error, file=sys.stderr)
-        print("", file=sys.stderr)
-
-    # Print results
+    # Build output string
+    output = ""
     for context in processed_contexts:
         if context:
-            print(context, '\n')
+            output += f"{context}\n\n"
     for file_path, analysis in large_files:
-        print(f"{file_path}:\n{analysis}\n\n")
+        output += f"{file_path}:\n{analysis}\n\n"
+        
+    return errors, output
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Analyze source files for relevance to a question')
+    parser.add_argument('question', help='Question to check relevance against')
+    parser.add_argument('--sample', type=int, help='Number of random files to sample from the input set')
+    parser.add_argument('--llm-concurrency', type=int, default=200, help='Maximum number of concurrent LLM requests')
+    parser.add_argument('--no-refine', action='store_false', dest='refine', help='Skip refinement and combination of analyses')
+    args = parser.parse_args()
+
+    # Read files from stdin
+    source_files = []
+    for line in sys.stdin:
+        file_path = line.strip()
+        if not os.path.isfile(file_path):
+            print(f"Warning: File does not exist: {file_path}", file=sys.stderr)
+            continue
+        source_files.append(file_path)
+
+    if not source_files:
+        print("Error: No valid source files provided", file=sys.stderr)
+        return 1
+
+    # Sample files if requested
+    if args.sample and args.sample < len(source_files):
+        source_files = random.sample(source_files, args.sample)
+
+    errors, result = search(args.question, source_files, args.llm_concurrency, args.refine)
+    if errors:
+        print("Errors encountered:", file=sys.stderr)
+        for error in errors:
+            print(error, file=sys.stderr)
+        print(file=sys.stderr)
+    print(result)
         
 
 if __name__ == "__main__":
