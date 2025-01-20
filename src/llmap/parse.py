@@ -5,7 +5,7 @@ from pathlib import Path
 
 from tree_sitter_languages import get_language, get_parser
 
-from .deepseek_v2_tokenizer import tokenizer
+from .deepseek_v3_tokenizer import tokenizer
 
 QUERIES = {
     '.java': Path(__file__).parent / "queries" / "java" / "skeleton.scm",
@@ -227,7 +227,7 @@ def extract_skeleton(source_file: str) -> str:
         lines.append(f"{open_braces.pop()}}}")
     return "\n".join(lines)
 
-def chunk(source_file: str, max_tokens=50_000):
+def chunk(source_file: str, max_tokens=60_000):
     """
     Break the file's code into chunks that do not exceed 'max_tokens',
     preserving the top-level head block and grouping items sensibly.

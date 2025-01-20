@@ -10,11 +10,11 @@ from textwrap import dedent
 
 from openai import OpenAI, BadRequestError, APITimeoutError, APIConnectionError
 
-from .deepseek_v2_tokenizer import tokenizer
+from .deepseek_v3_tokenizer import tokenizer
 from .exceptions import AIException
 from .parse import extract_skeleton
 
-MAX_DEEPSEEK_TOKENS = 50_000  # deepseek v2 tokenizer undercounts v3 tokens, this keeps it under the actual 64k limit
+MAX_DEEPSEEK_TOKENS = 60_000
 
 
 def collate(analyses: list[tuple[str, str]]) -> tuple[list[list[tuple[str, str]]], list[tuple[str, str]]]:
