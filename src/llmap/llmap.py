@@ -5,6 +5,7 @@ import os
 import random
 import shutil
 import sys
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -158,12 +159,9 @@ def main():
         errors.extend(phase2b_errors)
 
         # Group analyses by file and combine
-        analyses_by_file = {}
-        for (file_path, _), (_, analysis) in chunk_analyses:
-            if analysis:
-                if file_path not in analyses_by_file:
-                    analyses_by_file[file_path] = []
-                analyses_by_file[file_path].append(analysis)
+        analyses_by_file = defaultdict(list)
+        for (file_path, analysis) in chunk_analyses:
+            analyses_by_file[file_path].append(analysis)
 
         chunk_results = [
             (file_path, "\n\n".join(analyses))

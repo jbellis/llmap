@@ -7,6 +7,9 @@ from tree_sitter_languages import get_language, get_parser
 
 from .deepseek_v3_tokenizer import tokenizer
 
+
+MAX_DEEPSEEK_TOKENS = 64000 - 8000 # output 8k counts towards 64k limit
+
 QUERIES = {
     '.java': Path(__file__).parent / "queries" / "java" / "skeleton.scm",
     '.py': Path(__file__).parent / "queries" / "python" / "skeleton.scm"
@@ -227,7 +230,7 @@ def extract_skeleton(source_file: str) -> str:
         lines.append(f"{open_braces.pop()}}}")
     return "\n".join(lines)
 
-def chunk(source_file: str, max_tokens=60_000):
+def chunk(source_file: str, max_tokens=MAX_DEEPSEEK_TOKENS):
     """
     Break the file's code into chunks that do not exceed 'max_tokens',
     preserving the top-level head block and grouping items sensibly.
