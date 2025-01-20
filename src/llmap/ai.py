@@ -14,7 +14,6 @@ from .exceptions import AIException
 from .parse import extract_skeleton
 
 MAX_DEEPSEEK_TOKENS = 50_000  # deepseek v2 tokenizer undercounts v3 tokens, this keeps it under the actual 64k limit
-MAX_GEMINI_TOKENS = 900_000   # Gemini limit is 1M but we're using the wrong tokenizer so be conservative
 
 
 def collate(analyses: list[tuple[str, str]]) -> tuple[list[list[tuple[str, str]]], list[tuple[str, str]]]:
@@ -88,20 +87,11 @@ def maybe_truncate(text: str, max_tokens: int) -> str:
 class AI:
     def __init__(self, cache_dir):
         self.cache_dir = cache_dir
-
         # deepseek client
         deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
         if not deepseek_api_key:
             raise Exception("DEEPSEEK_API_KEY environment variable not set")
         self.deepseek_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
-
-        # gemini client
-        gemini_api_key = os.getenv('GOOGLE_API_KEY')
-        if not gemini_api_key:
-            raise Exception("GOOGLE_API_KEY environment variable not set")
-        self.gemini_client = OpenAI(api_key=gemini_api_key,
-                                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",)
-        self.gemini_lock = threading.Lock()
 
     def ask_deepseek(self, messages, file_path=None):
         """Helper method to make requests to DeepSeek API with error handling"""
