@@ -177,7 +177,7 @@ class AI:
         content = response.choices[0].message.content
         # if the response doesn't contain any of the expected choices, try again
         if not any(choice in content
-                   for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT', 'LLMAP_SOURCE'}):
+                   for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT'}):
             messages += [
                 {"role": "assistant", "content": content},
                 {"role": "user", "content": dedent(f"""
@@ -190,7 +190,7 @@ class AI:
             content = response.choices[0].message.content
         # if it still doesn't contain any of the expected choices, raise an exception
         if not any(choice in content
-                   for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT', 'LLMAP_SOURCE'}):
+                   for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT'}):
             raise AIException("Failed to get a valid response from DeepSeek", full_path)
 
         return SourceAnalysis(full_path, content)

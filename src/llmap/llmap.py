@@ -64,7 +64,7 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
             errors.extend(phase1_errors)
             # parse out the conclusion
             for file_path, analysis in skeleton_results:
-                if 'LLMAP_RELEVANT' in analysis or 'LLMAP_SOURCE' in analysis:
+                if 'LLMAP_RELEVANT' in analysis:
                     relevant_files.append(file_path)
 
         # Add non-parseable files directly to relevant_files for full source analysis
