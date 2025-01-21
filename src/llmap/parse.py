@@ -244,25 +244,29 @@ def chunk(source_file: str, max_tokens=MAX_DEEPSEEK_TOKENS):
 
 if __name__ == '__main__':
     if len(sys.argv) < 3:
-        print("Usage: parse.py <skeleton|chunk> <source_file> [source_file...]")
+        print("Usage: parse.py <skeleton|chunk|tokens> <source_file> [source_file...]")
         sys.exit(1)
 
     cmd = sys.argv[1]
     fnames = sys.argv[2:]
 
     for fname in fnames:
-        print(f"\n# {fname}\n")
         if cmd == 'skeleton':
-            print("Skeleton:")
+            print(f"\n# {fname}\n")
             print("--------------------------------------")
             print(extract_skeleton(fname))
         elif cmd == 'chunk':
+            print(f"\n# {fname}\n")
             chs = chunk(fname)  # smaller max for demo
             print("Chunks:")
             print("--------------------------------------")
             for i, ch in enumerate(chs, 1):
                 print(f"\n--- Chunk {i} (length={token_count(ch)})---")
                 print(ch + "\n")
+        elif cmd == 'tokens':
+            text = Path(fname).read_text()
+            count = token_count(text)
+            print(f"{fname} {count}")
         else:
-            print("First argument must be either 'skeleton' or 'chunk'")
+            print("First argument must be one of: skeleton, chunk, tokens")
             sys.exit(1)
