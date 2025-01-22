@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from .ai import AI, collate, SourceAnalysis
 from .exceptions import AIException
-from .parse import chunk, is_parseable
+from .parse import chunk, parseable_extension
 
 # we're using an old tree-sitter API
 import warnings
@@ -56,7 +56,7 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
         if not analyze_skeletons:
             parseable_files = set()
         else:
-            parseable_files = {f for f in source_files if is_parseable(f)}
+            parseable_files = {f for f in source_files if parseable_extension(f)}
         other_files = [f for f in source_files if f not in parseable_files]
 
         # Phase 1: Generate initial relevance against skeletons for parseable files
