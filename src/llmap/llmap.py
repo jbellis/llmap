@@ -16,7 +16,7 @@ import warnings
 warnings.filterwarnings('ignore', category=FutureWarning, module='tree_sitter')
 
 
-def search(question: str, source_files: list[str], llm_concurrency: int = 200, refine: bool = True) -> tuple[list[AIException], str]:
+def search(question: str, source_files: list[str], llm_concurrency: int = 200, refine: bool = True, analyze_skeletons: bool = True) -> tuple[list[AIException], str]:
     """
     Search source files for relevance to a question.
     
@@ -52,9 +52,12 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
     errors = []
     relevant_files = []
     with ThreadPoolExecutor(max_workers=llm_concurrency) as executor:
-        # Split files by whether we can parse a skeleton
-        parseable_files = {f for f in source_files if is_parseable(f)}
-        other_files = [f for f in source_files if not f in parseable_files]
+        # Split files by whether we can parse a skeleton (unless disabled)
+        if not analyze_skeletons:
+            parseable_files = set()
+        else:
+            parseable_files = {f for f in source_files if is_parseable(f)}
+        other_files = [f for f in source_files if f not in parseable_files]
 
         # Phase 1: Generate initial relevance against skeletons for parseable files
         if parseable_files:
@@ -130,6 +133,7 @@ def main():
     parser.add_argument('--sample', type=int, help='Number of random files to sample from the input set')
     parser.add_argument('--llm-concurrency', type=int, default=200, help='Maximum number of concurrent LLM requests')
     parser.add_argument('--no-refine', action='store_false', dest='refine', help='Skip refinement and combination of analyses')
+    parser.add_argument('--no-skeletons', action='store_false', dest='analyze_skeletons', help='Skip skeleton analysis phase for all files')
     args = parser.parse_args()
 
     # Read files from stdin
@@ -149,7 +153,7 @@ def main():
     if args.sample and args.sample < len(source_files):
         source_files = random.sample(source_files, args.sample)
 
-    errors, result = search(args.question, source_files, args.llm_concurrency, args.refine)
+    errors, result = search(args.question, source_files, args.llm_concurrency, args.refine, args.analyze_skeletons)
     if errors:
         print("Errors encountered:", file=sys.stderr)
         for error in errors:

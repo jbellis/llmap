@@ -63,7 +63,9 @@ Errors are logged to stderr.
 First, try passing `--no-refine`.  While the refine step is usually helpful in filtering out the noise
 (thus taking up less of your context window), sometimes it's too aggressive.
 
-Second, try rephrasing your question with more clues for the LLM to latch onto.  Like any information
+You can also try passing `--no-skeletons` in case DeepSeek was too conservative in its initial filtering. 
+
+Finally, try rephrasing your question with more clues for the LLM to latch onto.  Like any information
 retrieval tool, sometimes the way you ask can make a big difference.
 - Worse: "How can I add a WITH clause to the CQL SELECT statement?"
 - Better: "How can I add a WITH clause to the CQL SELECT statement? It will be used for adding query planning hints like which index to use."
@@ -72,10 +74,11 @@ retrieval tool, sometimes the way you ask can make a big difference.
 
 Commandline parameters:
 ```
-  --sample SAMPLE       Number of random files to sample
+  --sample SAMPLE       Number of random files to sample from the input set
   --llm-concurrency LLM_CONCURRENCY
                         Maximum number of concurrent LLM requests
   --no-refine           Skip refinement and combination of analyses
+  --no-skeletons        Skip skeleton analysis phase for all files
 ```
 
 Environment variables:
