@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 from .ai import AI, collate, SourceAnalysis
 from .exceptions import AIException
-from .parse import chunk
+from .parse import chunk, is_parseable
 
 # we're using an old tree-sitter API
 import warnings
@@ -53,7 +53,7 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
     relevant_files = []
     with ThreadPoolExecutor(max_workers=llm_concurrency) as executor:
         # Split files by whether we can parse a skeleton
-        parseable_files = {f for f in source_files if f.endswith('.java') or f.endswith('.py')}
+        parseable_files = {f for f in source_files if is_parseable(f)}
         other_files = [f for f in source_files if not f in parseable_files]
 
         # Phase 1: Generate initial relevance against skeletons for parseable files

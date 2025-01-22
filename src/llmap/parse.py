@@ -41,9 +41,8 @@ def parse_code(source_file: str):
     code_str = Path(source_file).read_text()
     code_bytes = code_str.encode("utf8")
 
-    ext = Path(source_file).suffix.lower()
-    if ext not in ('.java', '.py'):
-        raise ValueError(f"Unsupported extension: {ext}")
+    if not is_parseable(source_file):
+        raise ValueError(f"Unsupported filetype in {source_file}")
     lang_name = 'java' if ext == '.java' else 'python'
     parser = get_parser(lang_name)
     language = get_language(lang_name)
@@ -230,13 +229,17 @@ def extract_skeleton(source_file: str) -> str:
         lines.append(f"{open_braces.pop()}}}")
     return "\n".join(lines)
 
+def is_parseable(source_file: str) -> bool:
+    ext = Path(source_file).suffix.lower()
+    return ext in QUERIES.keys()
+
 def chunk(source_file: str, max_tokens=MAX_DEEPSEEK_TOKENS):
     """
     Break the file's code into chunks that do not exceed 'max_tokens',
     preserving the top-level head block and grouping items sensibly.
     """
-    if source_file.endswith('.py'):
-        # chunking not yet supported for Python
+    if not is_parseable(source_file):
+        # For unsupported file types, just truncate the whole file
         truncated = maybe_truncate(Path(source_file).read_text(), max_tokens, source_file)
         return [truncated]
     code_str, code_bytes, tree, ir = parse_code(source_file)
