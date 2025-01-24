@@ -3,13 +3,16 @@ import os
 import random
 import sys
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Callable, TypeVar
 
 from tqdm import tqdm
 
 from .ai import AI, collate, SourceAnalysis
 from .exceptions import AIException
 from .parse import chunk, parseable_extension
+
+T = TypeVar('T')
 
 # we're using an old tree-sitter API
 import warnings
@@ -31,20 +34,49 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
             - List of non-fatal AIException errors encountered during processing
             - Formatted string containing the analysis results
     """
-    # Initialize client
+    # Create AI client and thread pool
     client = AI()
 
-    def process_batch(executor, files, process_fn, desc):
-        """Process a batch of files and return results, tracking errors"""
-        futures = [executor.submit(process_fn, f) for f in files]
+    def process_phase(
+        executor: ThreadPoolExecutor,
+        items: list[T],
+        process_fn: Callable[[T], T],
+        desc: str,
+        client: AI
+    ) -> tuple[list[T], list[AIException]]:
+        """
+        Process a batch of items with progress tracking and error handling.
+        
+        Args:
+            executor: Thread pool executor
+            items: List of items to process
+            process_fn: Function to process each item
+            desc: Description for progress bar
+            client: AI client for progress tracking
+            
+        Returns:
+            tuple of (results, errors) where:
+            - results is a list of successfully processed items
+            - errors is a list of AIException errors encountered
+        """
         results = []
         errors = []
-        
-        for future in tqdm(futures, desc=desc):
-            try:
-                results.append(future.result())
-            except AIException as e:
-                errors.append(e)
+        tqdm_postfix = {"Rcvd": 0}
+        futures = [executor.submit(process_fn, item) for item in items]
+
+        with tqdm(total=len(futures), desc=desc,
+                 bar_format='{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt}{postfix}') as pbar:
+            def cb(n_lines):
+                tqdm_postfix['Rcvd'] += n_lines
+                pbar.set_postfix(tqdm_postfix)
+            client.progress_callback = cb
+
+            for future in as_completed(futures):
+                try:
+                    results.append(future.result())
+                except AIException as e:
+                    errors.append(e)
+                pbar.update(1)
                 
         return results, errors
 
@@ -61,23 +93,32 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
 
         # Phase 1: Generate initial relevance against skeletons for parseable files
         if parseable_files:
-            gen_fn = lambda f: client.skeleton_relevance(f, question)
-            skeleton_results, phase1_errors = process_batch(
-                executor, parseable_files, gen_fn, "Skeleton analysis")
-            errors.extend(phase1_errors)
-            # parse out the conclusion
+            skeleton_results, phase1_errors = process_phase(
+                executor,
+                parseable_files,
+                lambda f: client.skeleton_relevance(f, question),
+                "Skeleton analysis",
+                client
+            )
+            
+            # Process results and collect relevant files
             for file_path, analysis in skeleton_results:
                 if 'LLMAP_RELEVANT' in analysis:
                     relevant_files.append(file_path)
+            errors.extend(phase1_errors)
 
         # Add non-parseable files directly to relevant_files for full source analysis
         relevant_files.extend(other_files)
 
         # Phase 2: extract and analyze source code chunks from relevant files
         # First get all chunks
-        chunk_fn = lambda f: (f, chunk(f))
-        file_chunks, phase2a_errors = process_batch(
-            executor, relevant_files, chunk_fn, "Parsing full source")
+        file_chunks, phase2a_errors = process_phase(
+            executor,
+            relevant_files,
+            lambda f: (f, chunk(f)),
+            "Parsing full source",
+            client
+        )
         errors.extend(phase2a_errors)
 
         # Flatten chunks into (file_path, chunk_text) pairs for analysis
@@ -88,9 +129,13 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
                     chunk_pairs.append((file_path, chunk_text))
 
         # Analyze all chunks
-        analyze_fn = lambda pair: client.full_source_relevance(pair[1], question, pair[0])
-        chunk_analyses, phase2b_errors = process_batch(
-            executor, chunk_pairs, analyze_fn, "Analyzing full source")
+        chunk_analyses, phase2b_errors = process_phase(
+            executor,
+            chunk_pairs,
+            lambda pair: client.full_source_relevance(pair[1], question, pair[0]),
+            "Analyzing full source",
+            client
+        )
         errors.extend(phase2b_errors)
 
         # Group analyses by file and combine
@@ -107,9 +152,13 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
 
         # Refine groups in parallel
         if refine:
-            sift_fn = lambda g: client.sift_context(g, question)
-            processed_contexts, phase4_errors = process_batch(
-                executor, groups, sift_fn, "Refining analysis")
+            processed_contexts, phase4_errors = process_phase(
+                executor,
+                groups,
+                lambda g: client.sift_context(g, question),
+                "Refining analysis",
+                client
+            )
             errors.extend(phase4_errors)
         else:
             # If no refinement, just flatten the groups into individual results

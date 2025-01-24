@@ -88,6 +88,8 @@ def maybe_truncate(text: str, max_tokens: int) -> str:
 
 class AI:
     def __init__(self, cache_dir=None):  # cache_dir kept for backwards compatibility
+        # Progress callback will be set per-phase
+        self.progress_callback = None
         # Set up caching based on LLMAP_CACHE env var
         cache_mode = os.getenv('LLMAP_CACHE', 'read/write').lower()
         if cache_mode not in ['none', 'read', 'write', 'read/write']:
@@ -133,20 +135,39 @@ class AI:
         # Call API if not in cache or cache read disabled
         for attempt in range(5):
             try:
-                response = self.deepseek_client.chat.completions.create(
+                stream = self.deepseek_client.chat.completions.create(
                     model=model,
                     messages=messages,
-                    stream=False,
+                    stream=True,  # Enable streaming
                     max_tokens=8000,
                 )
                 
-                # Save successful response if cache writing enabled
-                if self.cache and self.cache_mode in ['write', 'read/write']:
-                    self.cache.set(cache_key, {
-                        'answer': response.choices[0].message.content
-                    })
+                full_content = []
+                for chunk in stream:
+                    if chunk.choices[0].delta.content is not None:
+                        delta = chunk.choices[0].delta.content
+                        full_content.append(delta)
+                        
+                        # Update progress based on newlines received
+                        if self.progress_callback:
+                            new_lines = delta.count('\n')
+                            if new_lines > 0:
+                                self.progress_callback(new_lines)
                 
-                return response
+                content = ''.join(full_content)
+                
+                # Save to cache if enabled
+                if self.cache and self.cache_mode in ['write', 'read/write']:
+                    self.cache.set(cache_key, {'answer': content})
+                
+                # Return mock response object
+                return type('Response', (), {
+                    'choices': [type('Choice', (), {
+                        'message': type('Message', (), {
+                            'content': content
+                        })
+                    })]
+                })
             except BadRequestError as e:
                 # log the request to /tmp/deepseek_error.log
                 with open('/tmp/deepseek_error.log', 'a') as f:
