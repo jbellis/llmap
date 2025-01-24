@@ -95,10 +95,22 @@ class AI:
         self.cache_mode = cache_mode
         self.cache = None if cache_mode == 'none' else Cache()
         
-        # deepseek client
+        # Get environment variables
         deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
         if not deepseek_api_key:
             raise Exception("DEEPSEEK_API_KEY environment variable not set")
+            
+        # Validate model names
+        valid_models = {'deepseek-chat', 'deepseek-reasoner'}
+        
+        self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'deepseek-chat')
+        if self.analyze_model not in valid_models:
+            raise ValueError(f"LLMAP_ANALYZE_MODEL must be one of: {', '.join(valid_models)}")
+            
+        self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'deepseek-reasoner')
+        if self.refine_model not in valid_models:
+            raise ValueError(f"LLMAP_REFINE_MODEL must be one of: {', '.join(valid_models)}")
+        
         self.deepseek_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
 
     def ask_deepseek(self, messages, model, file_path=None):
@@ -173,7 +185,7 @@ class AI:
             """)}
         ]
 
-        response = self.ask_deepseek(messages, "deepseek-chat", full_path)
+        response = self.ask_deepseek(messages, self.analyze_model, full_path)
         content = response.choices[0].message.content
         # if the response doesn't contain any of the expected choices, try again
         if not any(choice in content
@@ -186,7 +198,7 @@ class AI:
                       OR if implementation details are needed to determine relevance, conclude LLMAP_RELEVANT.
                 """)}
             ]
-            response = self.ask_deepseek(messages, "deepseek-chat", full_path)
+            response = self.ask_deepseek(messages, self.analyze_model, full_path)
             content = response.choices[0].message.content
         # if it still doesn't contain any of the expected choices, raise an exception
         if not any(choice in content
@@ -221,7 +233,7 @@ class AI:
             """)}
         ]
 
-        response = self.ask_deepseek(messages, "deepseek-chat", file_path)
+        response = self.ask_deepseek(messages, self.analyze_model, file_path)
         return SourceAnalysis(file_path, response.choices[0].message.content)
 
     def sift_context(self, file_group: list[SourceAnalysis], question: str) -> str:
@@ -255,7 +267,7 @@ class AI:
             """)}
         ]
 
-        response = self.ask_deepseek(messages, "deepseek-reasoner")
+        response = self.ask_deepseek(messages, self.refine_model)
         content1 = response.choices[0].message.content
         messages += [
             {"role": "assistant", "content": content1},
@@ -267,7 +279,7 @@ class AI:
                 ```
             """)}
         ]
-        response = self.ask_deepseek(messages, "deepseek-reasoner")
+        response = self.ask_deepseek(messages, self.refine_model)
         content2 = response.choices[0].message.content
 
         return content1 + '\n\n' + content2

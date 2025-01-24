@@ -84,4 +84,6 @@ Commandline parameters:
 Environment variables:
 ```
   LLMAP_CACHE           none|read|write|read/write
+  LLMAP_ANALYZE_MODEL   deepseek-chat|deepseek-reasoner
+  LLMAP_REFINE_MODEL    deepseek-chat|deepseek-reasoner
 ```
