@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "llmap-ai"
-version = "0.9.5"
+version = "0.9.5.2"
 authors = [
     { name = "Jonathan Ellis", email = "jbellis@gmail.com" },
 ]
@@ -21,7 +21,6 @@ dependencies = [
     "transformers>=4.47.1",
     "tree-sitter==0.21.3",
     "tree-sitter-languages==1.10.2",
-    "sqlite3",
     "tqdm",
 ]
 
