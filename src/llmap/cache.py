@@ -38,3 +38,8 @@ class Cache:
                 (cache_key, json.dumps(response))
             )
             conn.commit()
+
+    def delete(self, cache_key: str):
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute("DELETE FROM responses WHERE cache_key = ?", (cache_key,))
+            conn.commit()

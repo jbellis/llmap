@@ -5,7 +5,9 @@ import time
 from textwrap import dedent
 from typing import NamedTuple
 
-from openai import OpenAI, BadRequestError, APITimeoutError, APIConnectionError
+from openai import OpenAI, BadRequestError, APITimeoutError, APIConnectionError, APIStatusError, RateLimitError
+class FakeInternalServerError(Exception):
+    pass
 
 
 class SourceAnalysis(NamedTuple):
@@ -118,7 +120,7 @@ class AI:
     def ask_deepseek(self, messages, model, file_path=None):
         """Helper method to make requests to DeepSeek API with error handling, retries and caching"""
         # Create cache key from messages and model
-        cache_key = hashlib.sha256(json.dumps([messages, model]).encode()).hexdigest()
+        cache_key = _make_cache_key(messages, model)
         
         # Try to load from cache if reading enabled
         if self.cache and self.cache_mode in ['read', 'read/write']:
@@ -155,6 +157,8 @@ class AI:
                                 self.progress_callback(new_lines)
                 
                 content = ''.join(full_content)
+                if not content.strip():
+                    raise FakeInternalServerError()
                 
                 # Save to cache if enabled
                 if self.cache and self.cache_mode in ['write', 'read/write']:
@@ -173,7 +177,9 @@ class AI:
                 with open('/tmp/deepseek_error.log', 'a') as f:
                     print(f"{messages}\n\n->\n{e}", file=f)
                 raise AIException("Error evaluating source code", file_path, e)
-            except (APITimeoutError, APIConnectionError) as e:
+            except RateLimitError:
+                time.sleep(5)
+            except (APITimeoutError, APIConnectionError, APIStatusError, FakeInternalServerError):
                 time.sleep(1)  # Wait 1 second before retrying
         else:
             raise AIException("Repeated timeouts evaluating source code", file_path)
@@ -224,8 +230,10 @@ class AI:
         # if it still doesn't contain any of the expected choices, raise an exception
         if not any(choice in content
                    for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT'}):
+            if self.cache:
+                cache_key = _make_cache_key(messages, self.analyze_model)
+                self.cache.delete(cache_key)
             raise AIException("Failed to get a valid response from DeepSeek", full_path)
-
         return SourceAnalysis(full_path, content)
 
     def full_source_relevance(self, source: str, question: str, file_path: str = None) -> SourceAnalysis:
@@ -304,4 +312,8 @@ class AI:
         content2 = response.choices[0].message.content
 
         return content1 + '\n\n' + content2
+
+
+def _make_cache_key(messages: list, model: str) -> str:
+    return hashlib.sha256(json.dumps([messages, model]).encode()).hexdigest()
 
