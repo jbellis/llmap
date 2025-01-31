@@ -11,8 +11,9 @@ from .deepseek_v3_tokenizer import tokenizer
 MAX_DEEPSEEK_TOKENS = 62000 - 8000 # output 8k counts towards 64k limit. Headroom for scaffolding.
 
 QUERIES = {
-    '.java': Path(__file__).parent / "queries" / "java" / "skeleton.scm",
-    '.py': Path(__file__).parent / "queries" / "python" / "skeleton.scm"
+    '.java': 'java',
+    '.py': 'python',
+    '.cs': 'c_sharp'
 }
 
 def token_count(text: str) -> int:
@@ -31,7 +32,8 @@ def get_query(file_path: str) -> str:
     ext = Path(file_path).suffix
     if ext not in QUERIES:
         raise ValueError(f"Unsupported file extension: {ext}")
-    return QUERIES[ext].read_text()
+    query_path = Path(__file__).parent / "queries" / QUERIES[ext] / "skeleton.scm"
+    return query_path.read_text()
 
 def parse_code(source_file: str):
     """
@@ -44,7 +46,7 @@ def parse_code(source_file: str):
     ext = parseable_extension(source_file)
     if not ext:
         raise ValueError(f"Unsupported filetype in {source_file}")
-    lang_name = 'java' if ext == '.java' else 'python'
+    lang_name = QUERIES[ext]
     parser = get_parser(lang_name)
     language = get_language(lang_name)
     tree = parser.parse(code_bytes)
@@ -212,6 +214,9 @@ def extract_skeleton(source_file: str) -> str:
             else:
                 snippet = text_slice(node.start_byte, node.end_byte).rstrip()
                 lines.append(f"{indent}{snippet}")
+        elif ctype == 'using.directive':
+            snippet = text_slice(node.start_byte, node.end_byte).rstrip()
+            lines.append(f"{indent}{snippet}")
         elif ctype == 'method.declaration':
             body = node.child_by_field_name('body')
             ret_node = node.child_by_field_name('type')
