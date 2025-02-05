@@ -4,6 +4,7 @@ import os
 import time
 from textwrap import dedent
 from typing import NamedTuple
+import httpx
 
 from openai import OpenAI, BadRequestError, APITimeoutError, APIConnectionError, APIStatusError, RateLimitError
 class FakeInternalServerError(Exception):
@@ -179,7 +180,7 @@ class AI:
                 raise AIException("Error evaluating source code", file_path, e)
             except RateLimitError:
                 time.sleep(5)
-            except (APITimeoutError, APIConnectionError, APIStatusError, FakeInternalServerError):
+            except (httpx.RemoteProtocolError, APITimeoutError, APIConnectionError, APIStatusError, FakeInternalServerError):
                 time.sleep(1)  # Wait 1 second before retrying
         else:
             raise AIException("Repeated timeouts evaluating source code", file_path)
