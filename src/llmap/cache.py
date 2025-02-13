@@ -17,7 +17,8 @@ class Cache:
             sqlite3,
             database=self.db_path,
             check_same_thread=False,
-            maxconnections=10
+            maxconnections=10,
+            blocking=True,
         )
         self._init_db()
 
