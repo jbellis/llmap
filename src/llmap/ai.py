@@ -137,6 +137,7 @@ class AI:
 
         # Call API if not in cache or cache read disabled
         for attempt in range(5):
+            stream = None
             try:
                 stream = self.deepseek_client.chat.completions.create(
                     model=model,
@@ -182,6 +183,9 @@ class AI:
                 time.sleep(5)
             except (httpx.RemoteProtocolError, APITimeoutError, APIConnectionError, APIStatusError, FakeInternalServerError):
                 time.sleep(1)  # Wait 1 second before retrying
+            finally:
+                if stream:
+                    stream.close()
         else:
             raise AIException("Repeated timeouts evaluating source code", file_path)
 
