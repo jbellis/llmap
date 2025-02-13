@@ -6,19 +6,19 @@ from textwrap import dedent
 from typing import NamedTuple
 import httpx
 
-from openai import OpenAI, BadRequestError, APITimeoutError, APIConnectionError, APIStatusError, RateLimitError
+from openai import OpenAI, BadRequestError, AuthenticationError, PermissionDeniedError, UnprocessableEntityError, RateLimitError, APIError
 class FakeInternalServerError(Exception):
     pass
-
-
-class SourceAnalysis(NamedTuple):
-    file_path: str
-    analysis: str
 
 from .deepseek_v3_tokenizer import tokenizer
 from .exceptions import AIException
 from .parse import extract_skeleton, MAX_DEEPSEEK_TOKENS
 from .cache import Cache
+
+
+class SourceAnalysis(NamedTuple):
+    file_path: str
+    analysis: str
 
 
 def collate(analyses: list[SourceAnalysis]) -> tuple[list[list[SourceAnalysis]], list[SourceAnalysis]]:
@@ -174,14 +174,14 @@ class AI:
                         })
                     })]
                 })
-            except BadRequestError as e:
+            except (BadRequestError, AuthenticationError, PermissionDeniedError, UnprocessableEntityError) as e:
                 # log the request to /tmp/deepseek_error.log
                 with open('/tmp/deepseek_error.log', 'a') as f:
                     print(f"{messages}\n\n->\n{e}", file=f)
                 raise AIException("Error evaluating source code", file_path, e)
             except RateLimitError:
                 time.sleep(5)
-            except (httpx.RemoteProtocolError, APITimeoutError, APIConnectionError, APIStatusError, FakeInternalServerError):
+            except (httpx.RemoteProtocolError, APIError, FakeInternalServerError):
                 time.sleep(1)  # Wait 1 second before retrying
             finally:
                 if stream:
