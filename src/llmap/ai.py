@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import time
+from random import random
 from textwrap import dedent
 from typing import NamedTuple
 import httpx
@@ -12,34 +13,33 @@ class FakeInternalServerError(Exception):
 
 from .deepseek_v3_tokenizer import tokenizer
 from .exceptions import AIException
-from .parse import extract_skeleton, MAX_DEEPSEEK_TOKENS
 from .cache import Cache
 
 
-class SourceAnalysis(NamedTuple):
+class SourceText(NamedTuple):
     file_path: str
-    analysis: str
+    text: str
 
 
-def collate(analyses: list[SourceAnalysis]) -> tuple[list[list[SourceAnalysis]], list[SourceAnalysis]]:
+def collate(sources: list[SourceText], max_tokens_per_group) -> tuple[list[list[SourceText]], list[SourceText]]:
     """
     Group analyses into batches that fit under token limit, and separate out large files.
     
     Args:
-        analyses: List of SourceAnalysis objects
+        sources: List of SourceText objects
     
     Returns:
         Tuple of (grouped_analyses, large_files) where:
-        - grouped_analyses is a list of lists of SourceAnalysis objects, each group under MAX_DEEPSEEK_TOKENS
-        - large_files is a list of SourceAnalysis objects that individually exceed MAX_DEEPSEEK_TOKENS
+        - grouped_analyses is a list of lists of SourceAnalysis objects, each group under max_tokens
+        - large_files is a list of SourceAnalysis objects that individually exceed max_tokens
     """
     large_files = []
     small_files = []
     
     # Separate large and small files
-    for analysis in analyses:
-        tokens = len(tokenizer.encode(analysis.analysis))
-        if tokens > MAX_DEEPSEEK_TOKENS:
+    for analysis in sources:
+        tokens = len(tokenizer.encode(analysis.text))
+        if tokens > max_tokens_per_group:
             large_files.append(analysis)
         else:
             small_files.append((analysis, tokens))
@@ -50,7 +50,7 @@ def collate(analyses: list[SourceAnalysis]) -> tuple[list[list[SourceAnalysis]],
     current_tokens = 0
     
     for analysis, tokens in small_files:
-        if current_tokens + tokens > MAX_DEEPSEEK_TOKENS:
+        if current_tokens + tokens > max_tokens_per_group:
             if current_group:  # Only append if group has items
                 groups.append(current_group)
             current_group = [analysis]
@@ -72,7 +72,7 @@ def clean_response(text: str) -> str:
 
 # TODO split up large files into declaration + state + methods and run multiple evaluations
 # against different sets of methods for very large files instead of throwing data away
-def maybe_truncate(text: str, max_tokens: int) -> str:
+def maybe_truncate(text: str, max_tokens: int = None) -> str:
     """Truncate skeleton to stay under token limit"""
     # Count tokens
     tokens = tokenizer.encode(text)
@@ -90,6 +90,13 @@ def maybe_truncate(text: str, max_tokens: int) -> str:
 
 
 class AI:
+    def max_tokens(self) -> int:
+        """Return the maximum tokens allowed for the current API"""
+        if self.api_base_url == "https://api.deepseek.com":
+            return 62000 - 8000  # output 8k counts towards 64k limit. Headroom for scaffolding
+        else:
+            return 500000
+
     def __init__(self, cache_dir=None):  # cache_dir kept for backwards compatibility
         # Progress callback will be set per-phase
         self.progress_callback = None
@@ -100,23 +107,35 @@ class AI:
         self.cache_mode = cache_mode
         self.cache = None if cache_mode == 'none' else Cache()
         
-        # Get environment variables
+        # Get environment variables and set up API client
         deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
-        if not deepseek_api_key:
-            raise Exception("DEEPSEEK_API_KEY environment variable not set")
-            
-        # Validate model names
-        valid_models = {'deepseek-chat', 'deepseek-reasoner'}
+        gemini_api_key = os.getenv('GEMINI_API_KEY')
         
-        self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'deepseek-chat')
+        if not (deepseek_api_key or gemini_api_key):
+            raise Exception("Either DEEPSEEK_API_KEY or GEMINI_API_KEY environment variable must be set")
+            
+        # Configure based on available API key
+        if gemini_api_key:
+            valid_models = {'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.0-pro-exp-02-05'}
+            self.api_base_url = "https://generativelanguage.googleapis.com/v1beta/openai/"
+            self.api_key = gemini_api_key
+            self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'gemini-2.0-flash')
+            self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'gemini-2.0-pro-exp-02-05')
+        else:
+            valid_models = {'deepseek-chat', 'deepseek-reasoner'}
+            self.api_base_url = "https://api.deepseek.com"
+            self.api_key = deepseek_api_key
+            self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'deepseek-chat')
+            self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'deepseek-reasoner')
+
+        # Validate model names
         if self.analyze_model not in valid_models:
             raise ValueError(f"LLMAP_ANALYZE_MODEL must be one of: {', '.join(valid_models)}")
             
-        self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'deepseek-reasoner')
         if self.refine_model not in valid_models:
             raise ValueError(f"LLMAP_REFINE_MODEL must be one of: {', '.join(valid_models)}")
         
-        self.llm_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
+        self.llm_client = OpenAI(api_key=self.api_key, base_url=self.api_base_url)
 
     def ask_llm(self, messages, model, file_path=None):
         """Helper method to make requests to the API with error handling, retries and caching"""
@@ -180,7 +199,7 @@ class AI:
                     print(f"{messages}\n\n->\n{e}", file=f)
                 raise AIException("Error evaluating source code", file_path, e)
             except RateLimitError:
-                time.sleep(5)
+                time.sleep(5 * random() + 2**attempt) # 2, 4, 8, 16, 32
             except (httpx.RemoteProtocolError, APIError, FakeInternalServerError):
                 time.sleep(1)  # Wait 1 second before retrying
             finally:
@@ -189,59 +208,43 @@ class AI:
         else:
             raise AIException("Repeated timeouts evaluating source code", file_path)
 
-    def skeleton_relevance(self, full_path: str, question: str) -> SourceAnalysis:
+    def multi_skeleton_relevance(self, skeletons: list[SourceText], question: str) -> str:
         """
-        Check if a source file is relevant to the question using DeepSeek.
-        Raises AIException if a recoverable error occurs.
+        Evaluate multiple skeletons for relevance.
+        Skeletons is a list of SourceText objects containing file paths and skeleton text.
+        Returns a string containing only the relevant file paths (one per line),
+        or no paths if none are relevant.
         """
-        skeleton = extract_skeleton(full_path)
-        
-        # Truncate if needed
-        skeleton = maybe_truncate(skeleton, MAX_DEEPSEEK_TOKENS)
-        
-        # Create messages
+        # Combine all skeletons into a single message, labeling each with its file path
+        combined = []
+        for skeleton in skeletons:
+            combined.append(f"### FILE: {skeleton.file_path}\n{skeleton.text}\n")
+        combined_text = "\n\n".join(combined)
+
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to analyze and explain source code."},
-            {"role": "user", "content": skeleton},
-            {"role": "assistant", "content": "Thank you for providing your source code skeleton for analysis."},
+            {"role": "user", "content": combined_text},
+            {"role": "assistant", "content": "Thank you for providing your source code skeletons for analysis."},
             {"role": "user", "content": dedent(f"""
-                Evaluate the above source code skeleton for relevance to the following question:
+                I have given you multiple file skeletons, each labeled with "### FILE: path".
+                Evaluate each skeleton for relevance to the following question:
                 ```
                 {question}
                 ```
 
                 Think about whether the skeleton provides sufficient information to determine relevance:
-                - If the skeleton clearly indicates irrelevance to the question, conclude LLMAP_IRRELEVANT.
+                - If the skeleton clearly indicates irrelevance to the question, eliminate it from consideration.
                 - If the skeleton clearly shows that the code is relevant to the question,
-                  OR if implementation details are needed to determine relevance, conclude LLMAP_RELEVANT.
-            """)}
+                  OR if implementation details are needed to determine relevance, output its FULL path.
+                List ONLY the file paths that appear relevant to answering the question. 
+                Output one path per line. If a file is not relevant, do not list it at all.
+            """)},
+            {"role": "assistant", "content": "Understood."},
         ]
+        response = self.ask_llm(messages, self.analyze_model)
+        return response.choices[0].message.content
 
-        response = self.ask_llm(messages, self.analyze_model, full_path)
-        content = response.choices[0].message.content
-        # if the response doesn't contain any of the expected choices, try again
-        if not any(choice in content
-                   for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT'}):
-            messages += [
-                {"role": "assistant", "content": content},
-                {"role": "user", "content": dedent(f"""
-                    - If the skeleton clearly indicates irrelevance to the question, conclude LLMAP_IRRELEVANT.
-                    - If the skeleton clearly shows that the code is relevant to the question,
-                      OR if implementation details are needed to determine relevance, conclude LLMAP_RELEVANT.
-                """)}
-            ]
-            response = self.ask_llm(messages, self.analyze_model, full_path)
-            content = response.choices[0].message.content
-        # if it still doesn't contain any of the expected choices, raise an exception
-        if not any(choice in content
-                   for choice in {'LLMAP_RELEVANT', 'LLMAP_IRRELEVANT'}):
-            if self.cache:
-                cache_key = _make_cache_key(messages, self.analyze_model)
-                self.cache.delete(cache_key)
-            raise AIException("Failed to get a valid response from DeepSeek", full_path)
-        return SourceAnalysis(full_path, content)
-
-    def full_source_relevance(self, source: str, question: str, file_path: str = None) -> SourceAnalysis:
+    def full_source_relevance(self, source: str, question: str, file_path: str = None) -> SourceText:
         """
         Check source code for relevance
         Args:
@@ -268,9 +271,9 @@ class AI:
         ]
 
         response = self.ask_llm(messages, self.analyze_model, file_path)
-        return SourceAnalysis(file_path, response.choices[0].message.content)
+        return SourceText(file_path, response.choices[0].message.content)
 
-    def sift_context(self, file_group: list[SourceAnalysis], question: str) -> str:
+    def sift_context(self, file_group: list[SourceText], question: str) -> str:
         """
         Process groups of file analyses to extract only the relevant context.
 
@@ -281,7 +284,7 @@ class AI:
         Returns:
             List of processed contexts, one per group
         """
-        combined = "\n\n".join(f"File: {analysis.file_path}\n{analysis.analysis}" for analysis in file_group)
+        combined = "\n\n".join(f"File: {analysis.file_path}\n{analysis.text}" for analysis in file_group)
 
         messages = [
             {"role": "system", "content": "You are a helpful assistant designed to collate source code."},
@@ -297,7 +300,7 @@ class AI:
                 Remove any irrelevant files completely, but preserve file paths for the relevant code fragments.
                 Include the relevant code fragments as-is; do not truncate, summarize, or modify them.
                 
-                Do not include additional commentary or analysis of the provided text.
+                DO NOT include additional commentary or analysis of the provided text.
             """)}
         ]
 

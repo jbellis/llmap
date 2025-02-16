@@ -8,8 +8,6 @@ from tree_sitter_languages import get_language, get_parser
 from .deepseek_v3_tokenizer import tokenizer
 
 
-MAX_DEEPSEEK_TOKENS = 62000 - 8000 # output 8k counts towards 64k limit. Headroom for scaffolding.
-
 QUERIES = {
     '.java': 'java',
     '.py': 'python',
@@ -19,12 +17,12 @@ QUERIES = {
 def token_count(text: str) -> int:
     return len(tokenizer.encode(text))
 
-def maybe_truncate(text, max_tokens, what):
+def maybe_truncate(text, max_tokens, source):
     """Truncate 'text' to 'max_tokens' tokens if needed and log to stderr."""
     encoded = tokenizer.encode(text)
     if len(encoded) <= max_tokens:
         return text
-    print(f"[WARN] {what} exceeds {max_tokens} tokens; truncating.", file=sys.stderr)
+    print(f"[WARN] {source} exceeds {max_tokens} tokens; truncating.", file=sys.stderr)
     return tokenizer.decode(encoded[:max_tokens])
 
 def get_query(file_path: str) -> str:
@@ -241,7 +239,7 @@ def parseable_extension(source_file: str) -> bool|None:
         return ext
     return None
 
-def chunk(source_file: str, max_tokens=MAX_DEEPSEEK_TOKENS):
+def chunk(source_file: str, max_tokens: int):
     """
     Break the file's code into chunks that do not exceed 'max_tokens',
     preserving the top-level head block and grouping items sensibly.
@@ -268,7 +266,7 @@ if __name__ == '__main__':
             print(extract_skeleton(fname))
         elif cmd == 'chunk':
             print(f"\n# {fname}\n")
-            chs = chunk(fname)  # smaller max for demo
+            chs = chunk(fname, 2000)  # smaller max for demo
             print("Chunks:")
             print("--------------------------------------")
             for i, ch in enumerate(chs, 1):

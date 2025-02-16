@@ -8,9 +8,9 @@ from typing import Callable, TypeVar
 
 from tqdm import tqdm
 
-from .ai import AI, collate, SourceAnalysis
+from .ai import AI, collate, SourceText
 from .exceptions import AIException
-from .parse import chunk, parseable_extension
+from .parse import chunk, parseable_extension, maybe_truncate, extract_skeleton
 
 T = TypeVar('T')
 
@@ -91,21 +91,33 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
             parseable_files = {f for f in source_files if parseable_extension(f)}
         other_files = [f for f in source_files if f not in parseable_files]
 
-        # Phase 1: Generate initial relevance against skeletons for parseable files
+        # Phase 1: Generate initial relevance by batching skeletons for parseable files
         if parseable_files:
-            skeleton_results, phase1_errors = process_phase(
+            # 1b) Group skeletons using existing collate method
+            skeletons = [SourceText(fp, extract_skeleton(fp)) for fp in parseable_files]
+            skeleton_batches, large_skeletons = collate(skeletons, 20000)
+            # Include large skeletons as single-item batches
+            # TODO truncate any extremely large skeletons
+            skeleton_batches.extend([[large_skel] for large_skel in large_skeletons])
+
+            # 1c) Evaluate each skeleton batch concurrently
+            def check_skeleton_batch(batch):
+                response = client.multi_skeleton_relevance(batch, question)
+                # We parse out lines that match file paths from the LLM's response
+                return [b.file_path for b in batch if b.file_path in response]
+
+            batch_results, phase1_errors = process_phase(
                 executor,
-                parseable_files,
-                lambda f: client.skeleton_relevance(f, question),
-                "Skeleton analysis",
+                skeleton_batches,
+                check_skeleton_batch,
+                "Skeleton analysis (batch)",
                 client
             )
-            
-            # Process results and collect relevant files
-            for file_path, analysis in skeleton_results:
-                if 'LLMAP_RELEVANT' in analysis:
-                    relevant_files.append(file_path)
             errors.extend(phase1_errors)
+
+            # 1d) Flatten the results to get the final set of relevant files
+            for relevant_list in batch_results:
+                relevant_files.extend(relevant_list)
 
         # Add non-parseable files directly to relevant_files for full source analysis
         relevant_files.extend(other_files)
@@ -115,7 +127,7 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
         file_chunks, phase2a_errors = process_phase(
             executor,
             relevant_files,
-            lambda f: (f, chunk(f)),
+            lambda f: (f, chunk(f, client.max_tokens())),
             "Parsing full source",
             client
         )
@@ -144,11 +156,15 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
             analyses_by_file[file_path].append(analysis)
 
         # sorted so the caching is deterministic
-        chunk_results = sorted(SourceAnalysis(file_path, "\n\n".join(sorted(analyses)))
-                               for file_path, analyses in analyses_by_file.items())
+        # Combine and truncate if needed
+        chunk_results = []
+        for file_path, analyses in sorted(analyses_by_file.items()):
+            combined = "\n\n".join(sorted(analyses))
+            truncated = maybe_truncate(combined, client.max_tokens(), file_path)
+            chunk_results.append(SourceText(file_path, truncated))
 
         # Collate and process results
-        groups, large_files = collate(chunk_results)
+        groups, large_files = collate(chunk_results, client.max_tokens())
 
         # Refine groups in parallel
         if refine:
@@ -180,7 +196,7 @@ def main():
     parser = argparse.ArgumentParser(description='Analyze source files for relevance to a question')
     parser.add_argument('question', help='Question to check relevance against')
     parser.add_argument('--sample', type=int, help='Number of random files to sample from the input set')
-    parser.add_argument('--llm-concurrency', type=int, default=200, help='Maximum number of concurrent LLM requests')
+    parser.add_argument('--llm-concurrency', type=int, default=100, help='Maximum number of concurrent LLM requests')
     parser.add_argument('--no-refine', action='store_false', dest='refine', help='Skip refinement and combination of analyses')
     parser.add_argument('--no-skeletons', action='store_false', dest='analyze_skeletons', help='Skip skeleton analysis phase for all files')
     args = parser.parse_args()
