@@ -116,10 +116,10 @@ class AI:
         if self.refine_model not in valid_models:
             raise ValueError(f"LLMAP_REFINE_MODEL must be one of: {', '.join(valid_models)}")
         
-        self.deepseek_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
+        self.llm_client = OpenAI(api_key=deepseek_api_key, base_url="https://api.deepseek.com")
 
-    def ask_deepseek(self, messages, model, file_path=None):
-        """Helper method to make requests to DeepSeek API with error handling, retries and caching"""
+    def ask_llm(self, messages, model, file_path=None):
+        """Helper method to make requests to the API with error handling, retries and caching"""
         # Create cache key from messages and model
         cache_key = _make_cache_key(messages, model)
         
@@ -139,7 +139,7 @@ class AI:
         for attempt in range(5):
             stream = None
             try:
-                stream = self.deepseek_client.chat.completions.create(
+                stream = self.llm_client.chat.completions.create(
                     model=model,
                     messages=messages,
                     stream=True,  # Enable streaming
@@ -217,7 +217,7 @@ class AI:
             """)}
         ]
 
-        response = self.ask_deepseek(messages, self.analyze_model, full_path)
+        response = self.ask_llm(messages, self.analyze_model, full_path)
         content = response.choices[0].message.content
         # if the response doesn't contain any of the expected choices, try again
         if not any(choice in content
@@ -230,7 +230,7 @@ class AI:
                       OR if implementation details are needed to determine relevance, conclude LLMAP_RELEVANT.
                 """)}
             ]
-            response = self.ask_deepseek(messages, self.analyze_model, full_path)
+            response = self.ask_llm(messages, self.analyze_model, full_path)
             content = response.choices[0].message.content
         # if it still doesn't contain any of the expected choices, raise an exception
         if not any(choice in content
@@ -267,7 +267,7 @@ class AI:
             """)}
         ]
 
-        response = self.ask_deepseek(messages, self.analyze_model, file_path)
+        response = self.ask_llm(messages, self.analyze_model, file_path)
         return SourceAnalysis(file_path, response.choices[0].message.content)
 
     def sift_context(self, file_group: list[SourceAnalysis], question: str) -> str:
@@ -301,7 +301,7 @@ class AI:
             """)}
         ]
 
-        response = self.ask_deepseek(messages, self.refine_model)
+        response = self.ask_llm(messages, self.refine_model)
         content1 = response.choices[0].message.content
         messages += [
             {"role": "assistant", "content": content1},
@@ -313,7 +313,7 @@ class AI:
                 ```
             """)}
         ]
-        response = self.ask_deepseek(messages, self.refine_model)
+        response = self.ask_llm(messages, self.refine_model)
         content2 = response.choices[0].message.content
 
         return content1 + '\n\n' + content2
