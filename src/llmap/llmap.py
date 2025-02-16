@@ -71,12 +71,19 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
                 pbar.set_postfix(tqdm_postfix)
             client.progress_callback = cb
 
-            for future in as_completed(futures):
-                try:
-                    results.append(future.result())
-                except AIException as e:
-                    errors.append(e)
-                pbar.update(1)
+            try:
+                for future in as_completed(futures):
+                    try:
+                        results.append(future.result())
+                    except AIException as e:
+                        errors.append(e)
+                    pbar.update(1)
+            except Exception as e:
+                # Cancel all remaining futures
+                for future in futures:
+                    future.cancel()
+                # Re-raise the exception
+                raise e
                 
         return results, errors
 
