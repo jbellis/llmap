@@ -4,26 +4,26 @@ Tools like Aider and Cursor are great at editing code for you once you give them
 [finding that context automatically is largely an unsolved problem](https://spyced.blogspot.com/2024/12/the-missing-piece-in-ai-coding.html),
 especially in large codebases.
 
-LLMap is a CLI code search tool designed to solve that problem by asking  
-[DeepSeek-V3](https://huggingface.co/deepseek-ai/DeepSeek-V3) and DeepSeek-R1 to evaluate the relevance of each source file
+LLMap is a CLI code search tool designed to solve that problem by asking
+Gemini Flash (preferred) or DeepSeek V3 to evaluate the relevance of each source file
 in your codebase to your problem.
 
-Until recently, this would be prohibitively expensive and slow.  But DeepSeek-V3 is cheap, smart, fast,
-and most importantly, it allows multiple concurrent requests.  LLMap performs its analysis
-(by default) 500 files at a time, so it's reasonably fast even for large codebases.
+Until recently, this would be prohibitively expensive and slow.  But these models are not only
+smart and fast, but also cheap enough to search large codebases exhaustively without worrying about the price.
 
-LLMap also structures its request to take advantage of DeepSeek's caching.  This means that repeated
+LLMap also structures its request to take advantage of DeepSeek's automatic caching.  This means that repeated
 searches against the same files will be [faster and less expensive](https://api-docs.deepseek.com/guides/kv_cache).
+(It is possible to also support this for Gemini but in Gemini caching is not automatic and costs extra.)
 
 Finally, LLMap optimizes the problem by using a multi-stage analysis to avoid spending more time
 than necessary analyzing obviously irrelevant files.  LLMap performs 3 stages of analysis:
- 1. Coarse analysis using code skeletons [DeepSeek-V3]
- 2. Full source analysis of potentially relevant files from (1) [DeepSeek-V3]
- 3. Refine the output of (2) to only the most relevant snippets [DeepSeek-R1]
+ 1. Coarse analysis using code skeletons [Flash/V3]
+ 2. Full source analysis of potentially relevant files from (1) [Flash/V3]
+ 3. Refine the output of (2) to only the most relevant snippets [Pro/R1]
 
 ## Limitations
 
-Currently only Java and Python files are supported by the skeletonization pass.  
+Currently only Java, Python, and C# files are supported by the skeletonization pass.  
 LLMap will process other source files, but it will perform full source analysis on all of them,
 which will be slower.
 
@@ -36,12 +36,13 @@ is straightforward; contributions are welcome.
 pip install llmap-ai
 ```
 
-Get a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com).
+Get a Gemini API key from [ai.google.dev](https://ai.google.dev/)
+or a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com).
 
 ## Usage
 
 ```bash
-export DEEPSEEK_API_KEY=YYY
+export GEMINI_API_KEY=YYY # or DEEPSEEK_API_KEY if using DeepSeek
 
 find src/ -name "*.java" | llmap "Where is the database connection configured?"
 ```
