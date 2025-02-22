@@ -8,8 +8,9 @@ from typing import Callable, TypeVar
 
 from tqdm import tqdm
 
-from src.llmap.deepseek_v3_tokenizer import tokenizer
-from .ai import AI, SourceText
+from .deepseek_v3_tokenizer import tokenizer
+from .ai import CachingClient, SourceText
+from .prompts import multi_skeleton_relevance, full_source_relevance, refine_context
 from .exceptions import AIException
 from .parse import chunk, parseable_extension, maybe_truncate, extract_skeleton
 
@@ -36,14 +37,14 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
             - Formatted string containing the analysis results
     """
     # Create AI client and thread pool
-    client = AI()
+    client = CachingClient()
 
     def process_phase(
         executor: ThreadPoolExecutor,
         items: list[T],
         process_fn: Callable[[T], T],
         desc: str,
-        client: AI
+        client: CachingClient
     ) -> tuple[list[T], list[AIException]]:
         """
         Process a batch of items with progress tracking and error handling.
@@ -110,7 +111,7 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
 
             # 1c) Evaluate each skeleton batch concurrently
             def check_skeleton_batch(batch):
-                response = client.multi_skeleton_relevance(batch, question)
+                response = multi_skeleton_relevance(client, batch, question)
                 # We parse out lines that match file paths from the LLM's response
                 return [b.file_path for b in batch if b.file_path in response]
 
@@ -152,7 +153,7 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
         chunk_analyses, phase2b_errors = process_phase(
             executor,
             chunk_pairs,
-            lambda pair: client.full_source_relevance(pair[1], question, pair[0]),
+            lambda pair: full_source_relevance(client, pair[1], question, pair[0]),
             "Analyzing full source",
             client
         )
@@ -179,7 +180,7 @@ def search(question: str, source_files: list[str], llm_concurrency: int = 200, r
             processed_contexts, phase4_errors = process_phase(
                 executor,
                 groups,
-                lambda g: client.sift_context(g, question),
+                lambda g: refine_context(client, g, question),
                 "Refining analysis",
                 client
             )
