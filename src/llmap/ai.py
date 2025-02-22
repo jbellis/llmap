@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import sys
 import time
 from random import random
 from textwrap import dedent
@@ -19,74 +20,6 @@ from .cache import Cache
 class SourceText(NamedTuple):
     file_path: str
     text: str
-
-
-def collate(sources: list[SourceText], max_tokens_per_group) -> tuple[list[list[SourceText]], list[SourceText]]:
-    """
-    Group analyses into batches that fit under token limit, and separate out large files.
-    
-    Args:
-        sources: List of SourceText objects
-    
-    Returns:
-        Tuple of (grouped_analyses, large_files) where:
-        - grouped_analyses is a list of lists of SourceAnalysis objects, each group under max_tokens
-        - large_files is a list of SourceAnalysis objects that individually exceed max_tokens
-    """
-    large_files = []
-    small_files = []
-    
-    # Separate large and small files
-    for analysis in sources:
-        tokens = len(tokenizer.encode(analysis.text))
-        if tokens > max_tokens_per_group:
-            large_files.append(analysis)
-        else:
-            small_files.append((analysis, tokens))
-    
-    # Group small files
-    groups = []
-    current_group = []
-    current_tokens = 0
-    
-    for analysis, tokens in small_files:
-        if current_tokens + tokens > max_tokens_per_group:
-            if current_group:  # Only append if group has items
-                groups.append(current_group)
-            current_group = [analysis]
-            current_tokens = tokens
-        else:
-            current_group.append(analysis)
-            current_tokens += tokens
-    
-    if current_group:  # Add final group if it exists
-        groups.append(current_group)
-        
-    return groups, large_files
-
-
-def clean_response(text: str) -> str:
-    """Keep only alphanumeric characters and convert to lowercase"""
-    return ''.join(c for c in text.lower() if c.isalnum())
-
-
-# TODO split up large files into declaration + state + methods and run multiple evaluations
-# against different sets of methods for very large files instead of throwing data away
-def maybe_truncate(text: str, max_tokens: int = None) -> str:
-    """Truncate skeleton to stay under token limit"""
-    # Count tokens
-    tokens = tokenizer.encode(text)
-    if len(tokens) <= max_tokens:
-        return text
-        
-    # If over limit, truncate skeleton while preserving structure
-    while len(tokens) > max_tokens:
-        # Cut skeleton in half
-        lines = text.split('\n')
-        text = '\n'.join(lines[:len(lines) // 2])
-        tokens = tokenizer.encode(text)
-        
-    return text
 
 
 class AI:
@@ -121,12 +54,14 @@ class AI:
             self.api_key = gemini_api_key
             self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'gemini-2.0-flash')
             self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'gemini-2.0-pro-exp-02-05')
+            print("Using Gemini API", file=sys.stderr)
         else:
             valid_models = {'deepseek-chat', 'deepseek-reasoner'}
             self.api_base_url = "https://api.deepseek.com"
             self.api_key = deepseek_api_key
             self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'deepseek-chat')
             self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'deepseek-reasoner')
+            print("Using DeepSeek API", file=sys.stderr)
 
         # Validate model names
         if self.analyze_model not in valid_models:

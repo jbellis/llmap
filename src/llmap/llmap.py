@@ -8,7 +8,8 @@ from typing import Callable, TypeVar
 
 from tqdm import tqdm
 
-from .ai import AI, collate, SourceText
+from src.llmap.deepseek_v3_tokenizer import tokenizer
+from .ai import AI, SourceText
 from .exceptions import AIException
 from .parse import chunk, parseable_extension, maybe_truncate, extract_skeleton
 
@@ -236,3 +237,47 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def collate(sources: list[SourceText], max_tokens_per_group) -> tuple[list[list[SourceText]], list[SourceText]]:
+    """
+    Group analyses into batches that fit under token limit, and separate out large files.
+
+    Args:
+        sources: List of SourceText objects
+
+    Returns:
+        Tuple of (grouped_analyses, large_files) where:
+        - grouped_analyses is a list of lists of SourceAnalysis objects, each group under max_tokens
+        - large_files is a list of SourceAnalysis objects that individually exceed max_tokens
+    """
+    large_files = []
+    small_files = []
+
+    # Separate large and small files
+    for analysis in sources:
+        tokens = len(tokenizer.encode(analysis.text))
+        if tokens > max_tokens_per_group:
+            large_files.append(analysis)
+        else:
+            small_files.append((analysis, tokens))
+
+    # Group small files
+    groups = []
+    current_group = []
+    current_tokens = 0
+
+    for analysis, tokens in small_files:
+        if current_tokens + tokens > max_tokens_per_group:
+            if current_group:  # Only append if group has items
+                groups.append(current_group)
+            current_group = [analysis]
+            current_tokens = tokens
+        else:
+            current_group.append(analysis)
+            current_tokens += tokens
+
+    if current_group:  # Add final group if it exists
+        groups.append(current_group)
+
+    return groups, large_files
