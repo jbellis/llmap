@@ -9,7 +9,7 @@ from typing import Callable, TypeVar
 from tqdm import tqdm
 
 from .deepseek_v3_tokenizer import tokenizer
-from .ai import CachingClient, SourceText
+from .client import CachingClient, SourceText
 from .prompts import multi_skeleton_relevance, full_source_relevance, refine_context
 from .exceptions import AIException
 from .parse import chunk, parseable_extension, maybe_truncate, extract_skeleton

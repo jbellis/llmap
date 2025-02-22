@@ -1,6 +1,6 @@
 from textwrap import dedent
 
-from .ai import CachingClient, SourceText
+from .client import CachingClient, SourceText
 
 
 def multi_skeleton_relevance(client: CachingClient, skeletons: list[SourceText], question: str) -> str:
