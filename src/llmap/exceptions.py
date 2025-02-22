@@ -22,3 +22,9 @@ class AIException(Exception):
         if self.original_exception:
             error_str = f"{error_str} (Original exception: {str(self.original_exception)})"
         return error_str
+
+class AIRequestException(AIException):
+    pass
+
+class AITimeoutException(AIException):
+    pass

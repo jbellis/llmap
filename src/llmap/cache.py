@@ -28,6 +28,8 @@ class Cache:
         """
         with self.get_conn() as conn:
             with closing(conn.cursor()) as cur:
+                cur.execute("PRAGMA journal_mode=WAL;")
+                cur.execute("PRAGMA synchronous = NORMAL;")
                 cur.execute("""
                     CREATE TABLE IF NOT EXISTS responses (
                         cache_key TEXT PRIMARY KEY,
@@ -42,11 +44,13 @@ class Cache:
         """
         Context manager to get a connection from the pool.
         """
+        # print("Getting connection for thread " + str(threading.get_ident()))
         conn = self.pool.connection()
         try:
             yield conn
         finally:
             conn.close()  # returns connection to the pool
+            # print("Closed connection for thread " + str(threading.get_ident()))
 
     def get(self, cache_key: str) -> dict | None:
         """

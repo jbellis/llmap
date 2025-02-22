@@ -10,8 +10,8 @@ import httpx
 from openai import OpenAI, BadRequestError, AuthenticationError, PermissionDeniedError, UnprocessableEntityError, \
     RateLimitError, APIError
 
-from .exceptions import AIException
 from .cache import Cache
+from .exceptions import AIRequestException, AITimeoutException
 
 
 class FakeInternalServerError(Exception):
@@ -89,7 +89,7 @@ class CachingClient:
                     })]
                 })
 
-        for attempt in range(5):
+        for attempt in range(10):
             stream = None
             try:
                 stream = self.llm_client.chat.completions.create(
@@ -130,8 +130,9 @@ class CachingClient:
             except (BadRequestError, AuthenticationError, PermissionDeniedError, UnprocessableEntityError) as e:
                 with open('/tmp/deepseek_error.log', 'a') as f:
                     print(f"{messages}\n\n->\n{e}", file=f)
-                raise AIException("Error evaluating source code", file_path, e)
+                raise AIRequestException("Error evaluating source code", file_path, e)
             except RateLimitError:
+                # print("Rate limited, waiting", file=sys.stderr)
                 time.sleep(5 * random() + 2 ** attempt)
             except (httpx.RemoteProtocolError, APIError, FakeInternalServerError):
                 time.sleep(1)
@@ -139,7 +140,7 @@ class CachingClient:
                 if stream:
                     stream.close()
         else:
-            raise AIException("Repeated timeouts evaluating source code", file_path)
+            raise AITimeoutException("Repeated timeouts evaluating source code", file_path)
 
 
 def _make_cache_key(messages: list, model: str) -> str:
