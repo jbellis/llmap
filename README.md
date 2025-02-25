@@ -37,12 +37,13 @@ pip install llmap-ai
 ```
 
 Get a Gemini API key from [ai.google.dev](https://ai.google.dev/)
-or a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com).
+or a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com)
+or an OpenRouter API key from [openrouter.ai][https://openrouter.ai]
 
 ## Usage
 
 ```bash
-export GEMINI_API_KEY=YYY # or DEEPSEEK_API_KEY if using DeepSeek
+export GEMINI_API_KEY=YYY # or DEEPSEEK_API_KEY if using DeepSeek, OPENROUTER_API_KEY if using Open Router (currently only Deepseek R1 and Deepseek Chat supported from Open Router)
 
 find src/ -name "*.java" | llmap "Where is the database connection configured?"
 ```

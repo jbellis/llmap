@@ -39,10 +39,11 @@ class CachingClient:
         self.progress_callback = None
 
     def _setup_api(self):
+        openrouter_api_key = os.getenv('OPENROUTER_API_KEY')
         deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
         gemini_api_key = os.getenv('GEMINI_API_KEY')
 
-        if not (deepseek_api_key or gemini_api_key):
+        if not (deepseek_api_key or gemini_api_key or openrouter_api_key):
             raise Exception("Either DEEPSEEK_API_KEY or GEMINI_API_KEY environment variable must be set")
 
         if gemini_api_key:
@@ -52,14 +53,21 @@ class CachingClient:
             self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'gemini-2.0-flash')
             self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'gemini-2.0-pro-exp-02-05')
             print("Using Gemini API", file=sys.stderr)
-        else:
+        elif deepseek_api_key:
             valid_models = {'deepseek-chat', 'deepseek-reasoner'}
             self.api_base_url = "https://api.deepseek.com"
             self.api_key = deepseek_api_key
             self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'deepseek-chat')
             self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'deepseek-reasoner')
             print("Using DeepSeek API", file=sys.stderr)
-
+        else: # Open Router
+            valid_models = {'deepseek/deepseek-chat', 'deepseek/deepseek-r1'}
+            self.api_base_url = "https://openrouter.ai/api/v1"
+            self.api_key = openrouter_api_key
+            self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'deepseek/deepseek-chat')
+            self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'deepseek/deepseek-r1')
+            print("Using OpenRouter API", file=sys.stderr)
+        
         if self.analyze_model not in valid_models:
             raise ValueError(f"LLMAP_ANALYZE_MODEL must be one of: {', '.join(valid_models)}")
         if self.refine_model not in valid_models:
