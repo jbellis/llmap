@@ -37,12 +37,14 @@ pip install llmap-ai
 ```
 
 Get a Gemini API key from [ai.google.dev](https://ai.google.dev/)
-or a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com).
+or a DeepSeek API key from [platform.deepseek.com](https://platform.deepseek.com)
+or an OpenRouter API key from [openrouter.ai][https://openrouter.ai]
 
 ## Usage
 
 ```bash
-export GEMINI_API_KEY=YYY # or DEEPSEEK_API_KEY if using DeepSeek
+export GEMINI_API_KEY=YYY # or DEEPSEEK_API_KEY if using DeepSeek, OPENROUTER_API_KEY if using Open Router 
+
 
 find src/ -name "*.java" | llmap "Where is the database connection configured?"
 ```
@@ -87,4 +89,13 @@ Environment variables:
   LLMAP_CACHE           none|read|write|read/write
   LLMAP_ANALYZE_MODEL   deepseek-chat|deepseek-reasoner
   LLMAP_REFINE_MODEL    deepseek-chat|deepseek-reasoner
+```
+
+Open Router models:
+- *Currently, only Gemini and Deepseek models are accessible through Open Router connection.*
+- *To use gemini through Open Router, just set LLMAP_ANALYZE_MODEL and LLMAP_REFINE_MODEL each to one of the below. Defaults to deepseek.*
+
+```
+deepseek/deepseek-chat|deepseek/deepseek-r1
+google/gemini-flash-1.5|google/gemini-2.0-flash-001|google/gemini-pro-1.5|google/gemini-2.0-pro-exp-02-05:free
 ```
