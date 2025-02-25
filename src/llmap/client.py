@@ -61,7 +61,7 @@ class CachingClient:
             self.refine_model = os.getenv('LLMAP_REFINE_MODEL', 'deepseek-reasoner')
             print("Using DeepSeek API", file=sys.stderr)
         else: # Open Router
-            valid_models = {'deepseek/deepseek-chat', 'deepseek/deepseek-r1'}
+            valid_models = {'deepseek/deepseek-chat', 'deepseek/deepseek-r1', 'google/gemini-flash-1.5', 'google/gemini-2.0-flash-001', 'google/gemini-pro-1.5', 'google/gemini-2.0-pro-exp-02-05:free'}
             self.api_base_url = "https://openrouter.ai/api/v1"
             self.api_key = openrouter_api_key
             self.analyze_model = os.getenv('LLMAP_ANALYZE_MODEL', 'deepseek/deepseek-chat')
