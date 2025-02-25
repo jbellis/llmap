@@ -44,7 +44,7 @@ class CachingClient:
         gemini_api_key = os.getenv('GEMINI_API_KEY')
 
         if not (deepseek_api_key or gemini_api_key or openrouter_api_key):
-            raise Exception("Either DEEPSEEK_API_KEY or GEMINI_API_KEY environment variable must be set")
+            raise Exception("Either DEEPSEEK_API_KEY, OPENROUTER_API_KEY or GEMINI_API_KEY environment variable must be set")
 
         if gemini_api_key:
             valid_models = {'gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-2.0-pro-exp-02-05'}
